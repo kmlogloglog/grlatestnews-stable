@@ -4,7 +4,7 @@ import json
 import requests
 import re
 import html
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
 
 # Configure logging
@@ -173,16 +173,15 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     try:
         # Prepare the system prompt for translation and summarization
         system_prompt = """
-        You are an expert translator and news analyst specializing in Greek news. Your task is to:
+        You are a translator specializing in Greek to English translation. Your only role is to produce HTML 
+        with exactly 12 news stories, translating Greek news to English. 
         
-        1. Translate Greek news articles to English
-        2. Write clear, concise 2-3 sentence summaries for each article
-        3. Prioritize news about domestic Greek affairs (news from inside Greece)
-        4. Format your output as clean HTML that can be displayed on a webpage
-        5. Create EXACTLY 12 news entries in your response
-        
-        CRITICAL: Your response must be PURE HTML, starting with <h1> and ending with the last link.
-        Do not include any explanatory text before or after the HTML content.
+        CRITICAL: 
+        - Output EXACTLY 12 stories with translations
+        - Start with <h1> tag and end with the last </a> tag
+        - Include no introduction, explanation, or additional text
+        - Follow the example structure exactly
+        - Use only the HTML elements specified
         """
         
         # Prepare the user prompt with the articles
@@ -209,32 +208,41 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
             else:
                 user_prompt += "Content: [No content available]\n\n"
         
-        # Add detailed instructions
+        # Add extremely explicit instructions to guarantee formatting
         user_prompt += """
-        TASK: Translate these Greek news articles to English and create a summary with EXACTLY 12 news stories.
+        TRANSLATE EACH ARTICLE'S TITLE AND CONTENT FROM GREEK TO ENGLISH.
         
-        INSTRUCTIONS:
-        1. Your response MUST contain EXACTLY 12 stories - no more, no less.
-        2. Each story should include a translated title, 2-3 sentence summary, source name, and the original URL.
-        3. Present only factual information from the articles.
-        4. If there are fewer than 12 articles provided, create additional entries using information from the most important articles.
-        5. Format your response using EXACTLY the following HTML structure:
+        FORMAT YOUR RESPONSE AS PURE HTML WITH EXACTLY 12 NEWS STORIES.
         
-        <h1>Greek Domestic News Summary</h1>
+        YOU MUST FOLLOW THIS EXACT FORMAT:
         
-        <h2>1. [TRANSLATED TITLE]</h2>
-        <p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
-        <p class="news-source">Source: [SOURCE NAME]</p>
-        <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+<h1>Greek Domestic News Summary</h1>
+
+<h2>1. [TRANSLATED TITLE IN ENGLISH]</h2>
+<p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
+<p class="news-source">Source: [SOURCE NAME]</p>
+<a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+
+<h2>2. [TRANSLATED TITLE IN ENGLISH]</h2>
+<p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
+<p class="news-source">Source: [SOURCE NAME]</p>
+<a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+
+<h2>3. [TRANSLATED TITLE IN ENGLISH]</h2>
+<p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
+<p class="news-source">Source: [SOURCE NAME]</p>
+<a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+
+        [AND SO ON UNTIL YOU HAVE EXACTLY 12 STORIES TOTAL]
         
-        <h2>2. [NEXT TRANSLATED TITLE]</h2>
-        <p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
-        <p class="news-source">Source: [SOURCE NAME]</p>
-        <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+        CRITICAL RULES:
+        1. START DIRECTLY WITH <h1> TAG - NO INTRODUCTORY TEXT
+        2. END WITH THE LAST </a> TAG - NO CONCLUSION OR EXPLANATION
+        3. INCLUDE EXACTLY 12 NEWS STORIES - EACH WITH h2, p, p.news-source, AND a TAGS
+        4. TRANSLATE ALL GREEK TEXT TO ENGLISH
+        5. KEEP ALL URLS EXACTLY AS PROVIDED - DO NOT MODIFY THEM
         
-        ... (continue this pattern for all 12 stories)
-        
-        IMPORTANT: Start your response directly with <h1> and end with the final </a> tag. No introduction or conclusion text.
+        FINAL CHECK: COUNT YOUR STORIES AND VERIFY YOU HAVE EXACTLY 12.
         """
         
         # Make the API request
@@ -246,14 +254,15 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "Authorization": f"Bearer {MISTRAL_API_KEY}"
             },
             json={
-                "model": "mistral-small",  # Using smaller model for reliability
+                "model": "mistral-large-latest",  # Using the most powerful model for better translation
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "temperature": 0.2,       # Lower temperature for more deterministic results
-                "max_tokens": 4000,       # Need enough tokens for 12 stories
-                "top_p": 0.95             # More focused token selection
+                "temperature": 0.1,       # Very low temperature for consistent results
+                "max_tokens": 6000,       # Maximum token limit to ensure full output
+                "top_p": 0.95,            # More focused token selection
+                "random_seed": 42         # For consistency between runs
             },
             timeout=180  # Increased timeout (3 minutes) for translation work
         )
@@ -292,7 +301,7 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         return create_direct_output(news_data, f"Summarization Error: {str(e)}")
 
 
-def create_direct_output(news_data: List[Dict[str, Any]], error_message: str = None) -> Dict[str, Any]:
+def create_direct_output(news_data: List[Dict[str, Any]], error_message: Optional[str] = None) -> Dict[str, Any]:
     """
     Create a direct HTML output from the raw news data without using the API.
     This function simply organizes the scraped articles with minimal processing.
