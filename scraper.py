@@ -110,25 +110,32 @@ def scrape_news():
     """Scrape news from all sources and their articles."""
     all_news_data = []
     
+    # Limit the number of sources to prevent timeouts
+    limited_sources = NEWS_SOURCES[:3]  # Just use 3 sources to avoid timeouts
+    logger.info(f"Using limited sources: {limited_sources}")
+    
     # Start with a list to hold all article URLs
     all_article_urls = []
     
-    # Get article URLs from each news source homepage
-    for source_url in NEWS_SOURCES:
-        try:
-            article_urls = get_news_links(source_url)
-            all_article_urls.extend(article_urls)
-            
-            # Small delay between sources
-            time.sleep(random.uniform(1.0, 3.0))
-            
-        except Exception as e:
-            logger.error(f"Error processing source {source_url}: {str(e)}")
+    # Get article URLs from each news source homepage using ThreadPoolExecutor
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        future_to_source = {executor.submit(get_news_links, source, 3): source for source in limited_sources}
+        
+        for future in concurrent.futures.as_completed(future_to_source):
+            source = future_to_source[future]
+            try:
+                article_urls = future.result()
+                logger.debug(f"Got {len(article_urls)} links from {source}")
+                all_article_urls.extend(article_urls)
+            except Exception as e:
+                logger.error(f"Error processing source {source}: {str(e)}")
     
-    logger.info(f"Found {len(all_article_urls)} article URLs to scrape")
+    # Limit the total number of articles to scrape to prevent timeouts
+    all_article_urls = all_article_urls[:10]  # Just take the first 10 URLs
+    logger.info(f"Limited to {len(all_article_urls)} article URLs to scrape")
     
     # Use ThreadPoolExecutor to scrape articles in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_to_url = {executor.submit(scrape_article, url): url for url in all_article_urls}
         
         for future in concurrent.futures.as_completed(future_to_url):
