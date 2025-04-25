@@ -69,10 +69,13 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     1. The top 12 most important and UNIQUE news stories about Greek domestic affairs in English
     2. For each story include: a title, 2-3 sentence summary, source, and URL to original article
     3. Format the output as HTML with proper styling and formatting
-    4. For each article, include a clearly visible "Read Full Article" link that opens the original URL in a new window
-    5. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
-    6. Avoid duplicate stories across different sources
-    7. Only include factual information from the articles
+    4. For each article, ALWAYS include the exact URL provided with the article using HTML like this:
+       <a href="THE_EXACT_URL_PROVIDED" target="_blank" class="read-more">Read Full Article</a>
+    5. Make sure all URLs are complete (starting with http:// or https://) and properly formatted with no spaces
+    6. Only include recent news from 2023-2024 - avoid older stories
+    7. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
+    8. Avoid duplicate stories across different sources
+    9. Only include factual information from the articles
     """
     
     # Make the request to Mistral AI
