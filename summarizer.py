@@ -27,17 +27,18 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     
     # Prepare system prompt
     system_prompt = """
-    You are an expert news analyst and translator. Your task is to:
+    You are an expert news analyst and translator specializing in Greek domestic news. Your task is to:
     
     1. Analyze a collection of Greek news articles
-    2. Summarize and translate the content to English
-    3. Select the top 10 most important news stories
-    4. For each story, provide a concise title and a 2-3 sentence summary
-    5. Focus only on facts, no opinions or creativity
-    6. Group related stories together
-    7. Include the source website for each story
+    2. Prioritize news stories occurring INSIDE Greece and about Greek domestic affairs
+    3. Summarize and translate the content to English
+    4. Select the top 12 most important and UNIQUE news stories (avoid duplicates)
+    5. For each story, provide a concise title and a 2-3 sentence summary
+    6. Focus only on facts, no opinions or creativity
+    7. Group related stories together
+    8. Include the source website and original URL for each story
     
-    Your output should be structured in HTML format with proper formatting.
+    Your output should be structured in HTML format with proper formatting and include a link to the original article.
     """
     
     # Prepare the input for Mistral AI
@@ -65,11 +66,13 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     
     user_prompt += """
     Please analyze these articles and provide:
-    1. The top 10 most important news stories in English
-    2. For each story include: a title, 2-3 sentence summary, and source
-    3. Format the output as HTML that can be sent via email
-    4. Group related stories when appropriate
-    5. Only include factual information from the articles
+    1. The top 12 most important and UNIQUE news stories about Greek domestic affairs in English
+    2. For each story include: a title, 2-3 sentence summary, source, and URL to original article
+    3. Format the output as HTML with proper styling and formatting
+    4. For each article, include a clearly visible "Read Full Article" link that opens the original URL in a new window
+    5. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
+    6. Avoid duplicate stories across different sources
+    7. Only include factual information from the articles
     """
     
     # Make the request to Mistral AI
@@ -88,7 +91,7 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                     {"role": "user", "content": user_prompt}
                 ],
                 "temperature": 0.2,  # Low temperature for factual responses
-                "max_tokens": 2048
+                "max_tokens": 3072  # Increased token limit for 12 stories with details
             },
             timeout=120  # Increased timeout for potentially large responses
         )
