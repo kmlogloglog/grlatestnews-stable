@@ -171,17 +171,9 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         return create_direct_output(news_data, "No Mistral API key provided")
     
     try:
-        # Prepare the system prompt for translation and summarization
+        # Keep system prompt very simple
         system_prompt = """
-        You are a translator specializing in Greek to English translation. Your only role is to produce HTML 
-        with exactly 12 news stories, translating Greek news to English. 
-        
-        CRITICAL: 
-        - Output EXACTLY 12 stories with translations
-        - Start with <h1> tag and end with the last </a> tag
-        - Include no introduction, explanation, or additional text
-        - Follow the example structure exactly
-        - Use only the HTML elements specified
+        Translate Greek news to English and format as HTML with exactly 12 news entries.
         """
         
         # Prepare the user prompt with the articles
@@ -191,20 +183,19 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         max_articles = min(20, len(news_data))
         selected_articles = news_data[:max_articles]
         
-        # Add articles to the prompt
+        # Add articles to the prompt with minimal content to reduce token usage
         for i, article in enumerate(selected_articles, 1):
             user_prompt += f"ARTICLE {i}\n"
             user_prompt += f"Title: {article.get('title', 'Unknown Title')}\n"
             user_prompt += f"Source: {article.get('source', 'Unknown Source')}\n"
             user_prompt += f"URL: {article.get('url', 'Unknown URL')}\n"
             
-            # Add content with reasonable length limits
+            # Use much shorter content snippets to save tokens
             content = article.get('content', '')
             if content:
-                # Use more content for better translation but limit overall length
-                if len(content) > 800:  
-                    content = content[:800] + "..."
-                user_prompt += f"Content:\n{content}\n\n"
+                # Just use the first 200 characters for translation context
+                snippet = content[:200] + "..." if len(content) > 200 else content
+                user_prompt += f"Content: {snippet}\n\n"
             else:
                 user_prompt += "Content: [No content available]\n\n"
         
@@ -254,17 +245,15 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "Authorization": f"Bearer {MISTRAL_API_KEY}"
             },
             json={
-                "model": "mistral-large-latest",  # Using the most powerful model for better translation
+                "model": "mistral-small",  # Using smaller model for reliability
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "temperature": 0.1,       # Very low temperature for consistent results
-                "max_tokens": 6000,       # Maximum token limit to ensure full output
-                "top_p": 0.95,            # More focused token selection
-                "random_seed": 42         # For consistency between runs
+                "temperature": 0.2,       # Lower temperature for more deterministic results
+                "max_tokens": 4000        # Need enough tokens for 12 stories
             },
-            timeout=180  # Increased timeout (3 minutes) for translation work
+            timeout=90  # 90 second timeout
         )
         
         response.raise_for_status()
