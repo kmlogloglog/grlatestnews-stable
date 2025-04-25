@@ -3,6 +3,7 @@ import logging
 import json
 import requests
 import re
+import html
 from typing import List, Dict, Any
 from bs4 import BeautifulSoup
 
@@ -12,6 +13,61 @@ logger = logging.getLogger(__name__)
 # Mistral AI API configuration
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+
+def create_fallback_output(articles: List[Dict[str, Any]], error_message: str) -> Dict[str, Any]:
+    """
+    Create a simple HTML fallback for displaying articles when API fails.
+    
+    Args:
+        articles: The list of articles to display
+        error_message: The error message to show
+        
+    Returns:
+        Dictionary with HTML content for displaying the articles directly
+    """
+    # Create a simple HTML structure to display the articles
+    soup = BeautifulSoup("<h1>Greek Domestic News Summary</h1>", 'html.parser')
+    
+    # Add error message
+    error_p = soup.new_tag("p")
+    error_p["style"] = "color: #e74c3c; font-weight: bold;"
+    error_p.string = f"Unable to summarize news: {error_message}"
+    soup.append(error_p)
+    
+    retry_p = soup.new_tag("p")
+    retry_p.string = "Here are the raw news articles we found:"
+    soup.append(retry_p)
+    
+    # Add a limited number of articles
+    limit = min(12, len(articles))
+    for i, article in enumerate(articles[:limit], 1):
+        # Title
+        h2 = soup.new_tag("h2")
+        h2.string = f"{i}. {article.get('title', 'Untitled Article')}"
+        soup.append(h2)
+        
+        # Source
+        source_p = soup.new_tag("p")
+        source_p["class"] = "news-source"
+        source_p.string = f"Source: {article.get('source', 'Unknown Source')}"
+        soup.append(source_p)
+        
+        # URL
+        url = article.get('url', '')
+        if url:
+            a = soup.new_tag("a")
+            a["href"] = url
+            a["target"] = "_blank"
+            a["class"] = "read-more"
+            a.string = "Read Full Article"
+            soup.append(a)
+    
+    return {
+        "html_content": str(soup),
+        "article_count": len(articles),
+        "sources": list(set(article.get('source', '') for article in articles)),
+        "error": error_message
+    }
 
 def clean_html_content(html_content):
     """
@@ -206,15 +262,13 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "Authorization": f"Bearer {MISTRAL_API_KEY}"
             },
             json={
-                "model": "mistral-medium",  # Using the more powerful model for better handling
+                "model": "mistral-small",  # More reliable model
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "temperature": 0.1,  # Lower temperature for more deterministic responses
-                "max_tokens": 6000,  # Increased token limit for full 12 stories
-                "top_p": 0.95,      # More focused token selection
-                "random_seed": 42   # For consistency between runs
+                "temperature": 0.2,  # Standard temperature
+                "max_tokens": 4096   # Standard token limit
             },
             timeout=300  # Increased timeout for large responses with 12 articles
         )
@@ -241,12 +295,15 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     
     except requests.exceptions.RequestException as e:
         logger.error(f"Error making request to Mistral AI: {str(e)}")
-        raise Exception(f"Failed to connect to Mistral AI: {str(e)}")
+        # Instead of raising, provide a fallback simple display of raw news
+        return create_fallback_output(selected_articles, f"API Connection Error: {str(e)}")
     
     except (KeyError, IndexError) as e:
         logger.error(f"Error parsing Mistral AI response: {str(e)}")
-        raise Exception(f"Failed to parse Mistral AI response: {str(e)}")
+        # Provide fallback on parsing errors
+        return create_fallback_output(selected_articles, f"API Response Error: {str(e)}")
     
     except Exception as e:
         logger.error(f"Unexpected error during summarization: {str(e)}")
-        raise Exception(f"Summarization failed: {str(e)}")
+        # Provide fallback for any unexpected errors
+        return create_fallback_output(selected_articles, f"Summarization Error: {str(e)}")
