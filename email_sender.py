@@ -110,7 +110,18 @@ def send_email(recipient_email: str, summarized_news: Dict[str, Any]) -> None:
     """
     if not EMAIL_SENDER or not EMAIL_PASSWORD:
         logger.error("Email sender or password not found in environment variables")
-        raise ValueError("Email configuration is incomplete")
+        raise ValueError("Email configuration is incomplete. Please provide EMAIL_SENDER and EMAIL_PASSWORD.")
+    
+    # Validate recipient email
+    if not recipient_email or '@' not in recipient_email:
+        raise ValueError("Invalid recipient email address")
+    
+    # Validate summarized news
+    if not summarized_news or not isinstance(summarized_news, dict):
+        raise ValueError("Invalid summarized news data")
+    
+    if "html_content" not in summarized_news:
+        raise ValueError("Missing HTML content in summarized news")
     
     try:
         # Create the email
@@ -132,14 +143,19 @@ def send_email(recipient_email: str, summarized_news: Dict[str, Any]) -> None:
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.sendmail(EMAIL_SENDER, recipient_email, msg.as_string())
             logger.info(f"Email sent successfully to {recipient_email}")
+            return
     
     except smtplib.SMTPAuthenticationError:
         logger.error("SMTP authentication failed")
-        raise Exception("Failed to authenticate with the email server. Check your email credentials.")
+        raise Exception("Failed to authenticate with the email server. Please check the EMAIL_SENDER and EMAIL_PASSWORD credentials.")
+    
+    except smtplib.SMTPRecipientsRefused:
+        logger.error(f"Recipient email was refused: {recipient_email}")
+        raise Exception("The email server refused to send to this recipient. Please check the email address and try again.")
     
     except smtplib.SMTPException as e:
         logger.error(f"SMTP error: {str(e)}")
-        raise Exception(f"SMTP error: {str(e)}")
+        raise Exception(f"Email server error: {str(e)}")
     
     except Exception as e:
         logger.error(f"Error sending email: {str(e)}")

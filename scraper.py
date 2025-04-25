@@ -40,21 +40,32 @@ def get_news_links(url, limit=5):
             logger.error(f"Failed to download content from {url}")
             return []
         
-        # Extract all links from the page
-        links = trafilatura.extract_links(downloaded)
+        # Extract using BeautifulSoup since trafilatura.extract_links is not available
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(downloaded, 'html.parser')
         
-        # Filter links to only include those from the same domain
+        # Find all links
+        links = [a.get('href') for a in soup.find_all('a', href=True)]
+        
+        # Filter links to only include those from the same domain and normalize URLs
         domain = extract_domain(url)
         filtered_links = []
         
         for link in links:
+            # Handle relative URLs
+            if link.startswith('/'):
+                link = url.rstrip('/') + link
+            elif not (link.startswith('http://') or link.startswith('https://')):
+                continue
+                
             link_domain = extract_domain(link)
             # Check if it's from the same domain and likely an article
-            if link_domain == domain and "/article/" in link or "/news/" in link or "/ellada/" in link:
+            if link_domain == domain and ("/article/" in link or "/news/" in link or "/ellada/" in link or "/politics/" in link):
                 filtered_links.append(link)
         
         # Deduplicate and limit the number of links
         unique_links = list(set(filtered_links))
+        logger.debug(f"Found {len(unique_links)} unique article links from {url}")
         return unique_links[:limit]
         
     except Exception as e:
