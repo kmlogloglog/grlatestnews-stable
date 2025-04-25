@@ -10,16 +10,6 @@ document.addEventListener('DOMContentLoaded', function() {
     newsForm.addEventListener('submit', function(event) {
         event.preventDefault();
         
-        // Form validation
-        if (!newsForm.checkValidity()) {
-            event.stopPropagation();
-            newsForm.classList.add('was-validated');
-            return;
-        }
-        
-        // Get the email value
-        const email = document.getElementById('email').value;
-        
         // Show loading state
         setLoading(true);
         
@@ -33,20 +23,24 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch('/process_news', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `email=${encodeURIComponent(email)}`
+                'Content-Type': 'application/json',
+            }
         })
         .then(response => response.json())
         .then(data => {
             setLoading(false);
             
-            // Show success or error message
-            showAlert(data.status === 'success' ? 'success' : 'danger', data.message);
-            
-            // If there's fallback content, display it
-            if (data.html_content) {
-                showSummaryContent(data.html_content);
+            if (data.status === 'success') {
+                // Show success message
+                showAlert('success', 'News summarized successfully!');
+                
+                // Display content
+                if (data.html_content) {
+                    showSummaryContent(data.html_content);
+                }
+            } else {
+                // Show error message
+                showAlert('danger', data.message || 'An error occurred. Please try again.');
             }
         })
         .catch(error => {
@@ -58,11 +52,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function setLoading(isLoading) {
         if (isLoading) {
-            btnText.textContent = 'Processing...';
+            btnText.textContent = 'Summarizing...';
             btnSpinner.classList.remove('d-none');
             submitBtn.disabled = true;
         } else {
-            btnText.textContent = 'Get News Summary';
+            btnText.textContent = 'Get Greek News Summary';
             btnSpinner.classList.add('d-none');
             submitBtn.disabled = false;
         }

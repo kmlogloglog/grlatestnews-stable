@@ -20,20 +20,12 @@
                         <div class="text-center mb-4">
                             <i class="fas fa-newspaper fa-3x text-info mb-3"></i>
                             <h1 class="h3">Greek News Summarizer</h1>
-                            <p class="text-muted">Get top news from Greek websites, summarized in English and delivered to your inbox.</p>
+                            <p class="text-muted">Get top news from Greek websites, summarized in English, in just one click.</p>
                         </div>
                         
                         <form id="newsForm" class="needs-validation" novalidate>
-                            <div class="mb-4">
-                                <label for="email" class="form-label">Email address</label>
-                                <input type="email" class="form-control" id="email" placeholder="your@email.com" required>
-                                <div class="invalid-feedback">
-                                    Please provide a valid email address.
-                                </div>
-                            </div>
-                            
                             <button type="submit" id="submitBtn" class="btn btn-primary w-100 py-2">
-                                <span id="btnText">Get News Summary</span>
+                                <span id="btnText">Get Greek News Summary</span>
                                 <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                             </button>
                         </form>
@@ -42,14 +34,14 @@
                             <!-- Alert will be displayed here -->
                         </div>
 
-                        <!-- Results container for fallback display -->
+                        <!-- Results container for news summary display -->
                         <div id="resultsContainer" class="mt-4 d-none">
                             <div class="card">
                                 <div class="card-header bg-info text-white">
-                                    <h5 class="mb-0">News Summary</h5>
+                                    <h5 class="mb-0">Today's Greek News Summary</h5>
                                 </div>
                                 <div class="card-body">
-                                    <div id="summaryContent" class="border p-3 rounded bg-dark">
+                                    <div id="summaryContent" class="border p-3 rounded bg-dark overflow-auto" style="max-height: 500px; line-height: 1.6;">
                                         <!-- Summary content will be displayed here -->
                                     </div>
                                 </div>
