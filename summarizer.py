@@ -157,7 +157,7 @@ def clean_html_content(html_content):
 
 def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Summarize news data using Mistral AI.
+    Summarize news data using Mistral AI or a direct approach if API fails.
     
     Args:
         news_data: List of dictionaries containing news articles
@@ -165,96 +165,58 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     Returns:
         Dictionary with summarized news content
     """
-    if not MISTRAL_API_KEY:
-        logger.error("Mistral API key not found in environment variables")
-        raise ValueError("Mistral API key not found")
+    # Check API key (but don't fail if missing, use direct approach instead)
+    has_api_key = bool(MISTRAL_API_KEY)
     
-    # Prepare system prompt
-    system_prompt = """
-    You are an expert news analyst and translator specializing in Greek domestic news. Your task is to:
+    if not has_api_key:
+        logger.warning("No Mistral API key found, using direct article display")
+        return create_direct_output(news_data)
     
-    1. Analyze a collection of Greek news articles
-    2. Prioritize news stories occurring INSIDE Greece and about Greek domestic affairs
-    3. Summarize and translate the content to English
-    4. Select the top 12 most important and UNIQUE news stories (avoid duplicates)
-    5. For each story, provide a concise title and a 2-3 sentence summary
-    6. Focus only on facts, no opinions or creativity
-    7. Group related stories together
-    8. Include the source website and original URL for each story
-    
-    CRITICAL INSTRUCTIONS:
-    1. Your output must be PURE HTML ONLY - do not include any explanation text before or after the HTML
-    2. Do not begin with "Here is the summary" or any similar text
-    3. Start directly with the <h1> tag and end with the final </a> tag
-    4. Follow the exact HTML structure specified in the prompt
-    5. Verify that your output is valid HTML that can be directly injected into a webpage
-    """
-    
-    # Prepare the input for Mistral AI
-    # Format the news data into a structured prompt
-    user_prompt = "Here are the news articles to summarize and translate to English:\n\n"
-    
-    # Limit the number of articles to avoid token limits
-    max_articles = min(30, len(news_data))
-    selected_articles = news_data[:max_articles]
-    
-    for i, article in enumerate(selected_articles, 1):
-        user_prompt += f"ARTICLE {i}\n"
-        user_prompt += f"Title: {article.get('title', 'Unknown Title')}\n"
-        user_prompt += f"Source: {article.get('source', 'Unknown Source')}\n"
-        user_prompt += f"URL: {article.get('url', 'Unknown URL')}\n"
-        
-        # Limit content length to avoid token limits - shorter to save tokens for output
-        content = article.get('content', '')
-        if content:
-            if len(content) > 1000:  # Reduced from 1500
-                content = content[:1000] + "..."
-            user_prompt += f"Content:\n{content}\n\n"
-        else:
-            user_prompt += "Content: [No content available]\n\n"
-    
-    user_prompt += """
-    YOUR MOST IMPORTANT TASK IS TO CREATE AN HTML PAGE WITH EXACTLY 12 NEWS STORIES.
-    
-    CRITICAL INSTRUCTIONS (FAILURE TO FOLLOW WILL RESULT IN REJECTION):
-    1. Your response MUST contain EXACTLY 12 stories - no more, no less.
-    2. You MUST use the exact HTML structure specified below.
-    3. Your response must be pure HTML ONLY with no explanatory text.
-    4. Start directly with <h1> and end with the last </a> tag.
-    
-    CONTENT GUIDELINES:
-    1. Choose 12 different news stories about Greek domestic affairs 
-    2. Prioritize news occurring INSIDE Greece (not international news)
-    3. For each story include: title, 2-3 sentence summary, source, and original URL
-    4. Use only factual information from the articles (no opinions or creativity)
-    5. Translate everything to English
-    
-    RESPONSE FORMAT - FOLLOW THIS EXACTLY WITHOUT DEVIATION:
-    
-    <h1>Greek Domestic News Summary</h1>
-    
-    <h2>1. [STORY TITLE]</h2>
-    <p>[2-3 SENTENCE SUMMARY]</p>
-    <p class="news-source">Source: [SOURCE NAME]</p>
-    <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
-    
-    <h2>2. [STORY TITLE]</h2>
-    <p>[2-3 SENTENCE SUMMARY]</p>
-    <p class="news-source">Source: [SOURCE NAME]</p>
-    <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
-    
-    [CONTINUE THIS EXACT PATTERN FOR ALL 12 STORIES]
-    
-    FINAL VERIFICATION STEPS - YOU MUST DO THESE:
-    1. Count and ensure you have EXACTLY 12 <h2> tags with 12 article titles
-    2. Verify all 12 <a> tags have complete and unmodified URLs
-    3. Check that your output has no extra explanatory text
-    4. Confirm your response is pure HTML starting with <h1> and ending with the last </a>
-    """
-    
-    # Make the request to Mistral AI
+    # Try using the API first
     try:
-        logger.debug("Sending request to Mistral AI")
+        # Prepare a very simple system prompt
+        system_prompt = """
+        You are translating Greek news articles to English. Translate titles and a 2-3 sentence summary 
+        for each article. Start with <h1>Greek Domestic News Summary</h1> and provide EXACTLY 12 articles
+        in HTML format. Each article should have an h2 title, p summary, p source, and a link.
+        """
+        
+        # Prepare a simplified user prompt
+        user_prompt = "Here are the news articles to translate:\n\n"
+        
+        # Limit to 20 articles max
+        max_articles = min(20, len(news_data))
+        selected_articles = news_data[:max_articles]
+        
+        # Only include essential information in the prompt
+        for i, article in enumerate(selected_articles, 1):
+            user_prompt += f"ARTICLE {i} - "
+            user_prompt += f"Title: {article.get('title', 'Unknown')[:100]} - "
+            user_prompt += f"Source: {article.get('source', 'Unknown')} - "
+            user_prompt += f"URL: {article.get('url', '#')}\n"
+            
+            # Just a short content snippet to save tokens
+            content = article.get('content', '')
+            if content:
+                summary = content[:300] + "..." if len(content) > 300 else content
+                user_prompt += f"Short summary: {summary}\n\n"
+        
+        # Simple and clear instruction
+        user_prompt += """
+        Please translate these articles to English and format as HTML with EXACTLY this structure:
+        
+        <h1>Greek Domestic News Summary</h1>
+        
+        <h2>1. [TRANSLATED TITLE]</h2>
+        <p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
+        <p class="news-source">Source: [SOURCE]</p>
+        <a href="[ORIGINAL URL]" target="_blank" class="read-more">Read Full Article</a>
+        
+        IMPORTANT: Return EXACTLY 12 articles using this format. No extra text before or after.
+        """
+        
+        # Make the request with simplified parameters
+        logger.debug("Sending simplified request to Mistral AI")
         response = requests.post(
             MISTRAL_API_URL,
             headers={
@@ -262,48 +224,108 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "Authorization": f"Bearer {MISTRAL_API_KEY}"
             },
             json={
-                "model": "mistral-small",  # More reliable model
+                "model": "mistral-small",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "temperature": 0.2,  # Standard temperature
-                "max_tokens": 4096   # Standard token limit
+                "temperature": 0.3,
+                "max_tokens": 2048
             },
-            timeout=300  # Increased timeout for large responses with 12 articles
+            timeout=120  # Shorter timeout
         )
         
         response.raise_for_status()
         result = response.json()
         
-        logger.debug("Received response from Mistral AI")
-        
-        # Extract the summary content
+        # Process the response
         summary_content = result["choices"][0]["message"]["content"]
-        
-        # Clean and wrap the summary content to ensure it's well-formed HTML
         cleaned_summary = clean_html_content(summary_content)
         
-        # Prepare the final output
-        output = {
-            "html_content": cleaned_summary,
-            "article_count": len(selected_articles),
-            "sources": list(set(article.get('source', '') for article in selected_articles))
-        }
+        # Check if we got a proper response with at least a few h2 tags
+        soup = BeautifulSoup(cleaned_summary, 'html.parser')
+        if len(soup.find_all('h2')) >= 3:  # At least 3 stories
+            logger.info(f"API returned {len(soup.find_all('h2'))} news stories successfully")
+            return {
+                "html_content": cleaned_summary,
+                "article_count": len(selected_articles),
+                "sources": list(set(article.get('source', '') for article in selected_articles))
+            }
+        else:
+            # If not enough stories, fall back to direct approach
+            logger.warning("API didn't return enough stories, using direct approach")
+            return create_direct_output(news_data)
         
-        return output
-    
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error making request to Mistral AI: {str(e)}")
-        # Instead of raising, provide a fallback simple display of raw news
-        return create_fallback_output(selected_articles, f"API Connection Error: {str(e)}")
-    
-    except (KeyError, IndexError) as e:
-        logger.error(f"Error parsing Mistral AI response: {str(e)}")
-        # Provide fallback on parsing errors
-        return create_fallback_output(selected_articles, f"API Response Error: {str(e)}")
-    
     except Exception as e:
-        logger.error(f"Unexpected error during summarization: {str(e)}")
-        # Provide fallback for any unexpected errors
-        return create_fallback_output(selected_articles, f"Summarization Error: {str(e)}")
+        logger.error(f"Error with Mistral AI: {str(e)}")
+        # Always fall back to direct approach on any error
+        return create_direct_output(news_data)
+
+
+def create_direct_output(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Create a direct HTML output from the raw news data without using the API.
+    This function simply organizes the scraped articles with minimal processing.
+    
+    Args:
+        news_data: List of dictionaries containing news articles
+        
+    Returns:
+        Dictionary with HTML content for displaying the articles directly
+    """
+    # Create a simple HTML structure
+    soup = BeautifulSoup("<h1>Greek Domestic News Summary</h1>", 'html.parser')
+    
+    # Add a simple explanation
+    note_p = soup.new_tag("p")
+    note_p["style"] = "font-style: italic; margin-bottom: 20px;"
+    note_p.string = "Here are the most recent news articles from Greek sources:"
+    soup.append(note_p)
+    
+    # Select up to 12 articles
+    limit = min(12, len(news_data))
+    for i, article in enumerate(news_data[:limit], 1):
+        # Extract title and try to translate using a simple rule-based approach
+        title = article.get('title', 'Untitled Article')
+        
+        # Add the heading with number
+        h2 = soup.new_tag("h2")
+        h2.string = f"{i}. {title}"
+        soup.append(h2)
+        
+        # Add a short excerpt from the content if available
+        content = article.get('content', '')
+        if content:
+            # Get first 2-3 sentences or a small excerpt
+            sentences = re.split(r'[.!?]+', content)
+            excerpt = '. '.join(sentences[:min(3, len(sentences))]).strip()
+            
+            if not excerpt:  # Fallback if split didn't work
+                excerpt = content[:300] + "..." if len(content) > 300 else content
+                
+            p = soup.new_tag("p")
+            p.string = excerpt
+            soup.append(p)
+        
+        # Add source
+        source_p = soup.new_tag("p")
+        source_p["class"] = "news-source"
+        source_p.string = f"Source: {article.get('source', 'Unknown Source')}"
+        soup.append(source_p)
+        
+        # Add link to original article
+        url = article.get('url', '')
+        if url:
+            a = soup.new_tag("a")
+            a["href"] = url
+            a["target"] = "_blank"
+            a["class"] = "read-more"
+            a.string = "Read Full Article"
+            soup.append(a)
+    
+    return {
+        "html_content": str(soup),
+        "article_count": len(news_data),
+        "sources": list(set(article.get('source', '') for article in news_data)),
+        "direct_mode": True
+    }
