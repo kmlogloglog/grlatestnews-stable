@@ -24,21 +24,37 @@ def clean_html_content(html_content):
         Cleaned and properly formatted HTML content
     """
     try:
-        # Don't manipulate the content at all if already in HTML format
-        if html_content.strip().startswith('<'):
-            # Just add minimal safety attributes to links without changing URLs
+        # Check if content contains any HTML tags
+        if '<' in html_content and '>' in html_content:
+            # Extract just the HTML part if there's markdown or other text before/after it
+            html_start = html_content.find('<h1>')
+            html_end = html_content.rfind('</a>') + 4  # Length of </a>
+            
+            if html_start >= 0 and html_end > html_start:
+                html_content = html_content[html_start:html_end]
+            
+            # Parse and clean the HTML
             soup = BeautifulSoup(html_content, 'html.parser')
             
-            # Only add target="_blank" to links without changing the URLs
+            # Make sure all links have target="_blank" and proper class
             for a_tag in soup.find_all('a'):
                 if 'href' in a_tag.attrs:
+                    # Ensure URL is properly formed but don't change the actual URL
+                    url = a_tag['href'].strip()
                     a_tag['target'] = '_blank'
-                    
+                    if 'class' not in a_tag.attrs or 'read-more' not in a_tag.attrs['class']:
+                        a_tag['class'] = 'read-more'
+            
             # Add title if missing
             if not soup.find('h1'):
                 title_div = soup.new_tag('h1')
                 title_div.string = 'Greek Domestic News Summary'
                 soup.insert(0, title_div)
+            
+            # Count the number of news stories (h2 tags) and ensure there are 12
+            h2_tags = soup.find_all('h2')
+            if len(h2_tags) < 12:
+                logger.warning(f"Only found {len(h2_tags)} news stories, expected 12")
                 
             return str(soup)
         else:
@@ -46,8 +62,8 @@ def clean_html_content(html_content):
             return f"<div class='news-summary'><h1>Greek Domestic News Summary</h1><p>{html_content}</p></div>"
     except Exception as e:
         logger.error(f"Error cleaning HTML content: {str(e)}")
-        # If there's an error in cleaning, return original content
-        return html_content
+        # If there's an error in cleaning, return a safe fallback
+        return f"<div class='news-summary'><h1>Greek Domestic News Summary</h1><p>There was an error processing the news content. Please try again.</p></div>"
 
 def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -107,17 +123,29 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     1. *** YOU MUST INCLUDE EXACTLY 12 STORIES - THIS IS THE TOP PRIORITY REQUIREMENT ***
     2. Provide EXACTLY 12 news stories about Greek domestic affairs in English - not 3, not 10, but EXACTLY 12.
     3. For each story include: a title, 2-3 sentence summary, source, and URL to original article
-    4. Format the output as HTML with proper styling and formatting
-    5. For each article, ALWAYS include the EXACT and COMPLETE URL from the article data, formatted exactly like this:
-       <a href="THE_EXACT_COMPLETE_URL" target="_blank" class="read-more">Read Full Article</a>
-    6. Make absolutely sure to retain the EXACT URLs as provided without modification, do not change them at all
-    7. Do not modify or rewrite any URLs, even if they appear to be incorrect
-    8. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
-    9. Only include factual information from the articles
-    10. Count your stories at the end to ensure you have EXACTLY 12 stories - this is a strict requirement
-    11. If you don't have enough unique stories, you can include less important news as long as they are recent and from Greece
+    4. Format the output using the EXACT HTML structure shown below - follow this format EXACTLY:
     
-    *** FINAL CHECK: YOU MUST VERIFY THAT YOUR RESPONSE CONTAINS EXACTLY 12 STORIES ***
+    <h1>Greek Domestic News Summary</h1>
+    
+    <h2>1. [Story Title Here]</h2>
+    <p>[2-3 sentence summary here]</p>
+    <p class="news-source">Source: [Source Name]</p>
+    <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+    
+    <h2>2. [Next Story Title]</h2>
+    <p>[2-3 sentence summary here]</p>
+    <p class="news-source">Source: [Source Name]</p>
+    <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+    
+    ... and so on for all 12 stories
+    
+    5. Make absolutely sure to retain the EXACT URLs as provided without modification, do not change them at all
+    6. Follow the HTML structure exactly with h1, h2, p, and a elements with the exact classes shown
+    7. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
+    8. Only include factual information from the articles
+    9. Count your stories to ensure you have EXACTLY 12 stories - this is a strict requirement
+    
+    *** FINAL CHECK: YOU MUST VERIFY THAT YOUR RESPONSE CONTAINS EXACTLY 12 STORIES WITH PROPER HTML FORMATTING ***
     """
     
     # Make the request to Mistral AI

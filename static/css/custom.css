@@ -1,14 +1,19 @@
-/* Custom additional styling */
+/* Custom styling for Greek News Summarizer */
 body {
     min-height: 100vh;
-    display: flex;
-    align-items: center;
     background-color: var(--bs-dark);
+    color: var(--bs-light);
+}
+
+.container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
 }
 
 .card {
     background-color: var(--bs-gray-800);
     border-radius: 12px;
+    margin-bottom: 2rem;
 }
 
 .btn-primary {
@@ -18,6 +23,72 @@ body {
 .btn-primary:hover {
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Results styling */
+#resultsContainer {
+    padding: 1.5rem;
+    border-radius: 12px;
+    background-color: var(--bs-gray-800);
+    margin-top: 2rem;
+}
+
+#summaryContent {
+    padding: 1.5rem;
+    border-radius: 8px;
+    background-color: var(--bs-gray-900);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* News summary styling */
+#summaryContent h1 {
+    font-size: 1.75rem;
+    font-weight: bold;
+    color: var(--bs-info);
+    margin-bottom: 1.5rem;
+    text-align: center;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--bs-gray-700);
+}
+
+#summaryContent h2 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--bs-light);
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--bs-gray-700);
+    padding-bottom: 0.5rem;
+}
+
+#summaryContent p {
+    color: var(--bs-light);
+    margin-bottom: 1rem;
+}
+
+#summaryContent a.read-more {
+    display: inline-block;
+    color: var(--bs-light);
+    background-color: var(--bs-primary);
+    padding: 0.4rem 1rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 500;
+    margin: 0.5rem 0 1.5rem 0;
+    transition: background-color 0.2s;
+}
+
+#summaryContent a.read-more:hover {
+    background-color: var(--bs-primary-dark, #0056b3);
+    text-decoration: none;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+#summaryContent .news-source {
+    font-style: italic;
+    color: var(--bs-gray-500);
+    font-size: 0.9rem;
+    margin: 0.25rem 0;
 }
 
 /* For mobile optimization */
@@ -33,5 +104,13 @@ body {
     
     .card-body {
         padding: 1.5rem;
+    }
+    
+    #summaryContent h1 {
+        font-size: 1.5rem;
+    }
+    
+    #summaryContent h2 {
+        font-size: 1.2rem;
     }
 }
