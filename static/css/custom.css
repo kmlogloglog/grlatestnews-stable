@@ -1,0 +1,37 @@
+/* Custom additional styling */
+body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    background-color: var(--bs-dark);
+}
+
+.card {
+    background-color: var(--bs-gray-800);
+    border-radius: 12px;
+}
+
+.btn-primary {
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* For mobile optimization */
+@media (max-width: 576px) {
+    .container {
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+    
+    .card {
+        border-radius: 10px;
+    }
+    
+    .card-body {
+        padding: 1.5rem;
+    }
+}
