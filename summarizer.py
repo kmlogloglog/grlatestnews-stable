@@ -24,44 +24,30 @@ def clean_html_content(html_content):
         Cleaned and properly formatted HTML content
     """
     try:
-        # First, check if the content is already wrapped in HTML tags
-        if not html_content.strip().startswith('<'):
-            # If not HTML, wrap it in proper tags
-            html_content = f"<div class='news-summary'>{html_content}</div>"
-        
-        # Use BeautifulSoup to parse and fix any HTML issues
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Ensure all links have target="_blank" and proper class
-        for a_tag in soup.find_all('a'):
-            if 'href' in a_tag.attrs:
-                # Fix URLs that might be malformed
-                url = a_tag['href'].strip()
-                if url and not url.startswith(('http://', 'https://')):
-                    # Try to fix the URL if possible
-                    if url.startswith('www.'):
-                        url = 'https://' + url
-                    # If still not valid, just ensure it doesn't break things
-                    if not url.startswith(('http://', 'https://', '#', '/')):
-                        url = '#'  # Fallback to prevent broken links
-                
-                a_tag['href'] = url
-                a_tag['target'] = '_blank'
-                if 'read' in a_tag.text.lower() or 'article' in a_tag.text.lower():
-                    a_tag['class'] = 'read-more'
-        
-        # Add title if missing
-        if not soup.find('h1'):
-            title_div = soup.new_tag('h1')
-            title_div.string = 'Greek Domestic News Summary'
-            soup.insert(0, title_div)
+        # Don't manipulate the content at all if already in HTML format
+        if html_content.strip().startswith('<'):
+            # Just add minimal safety attributes to links without changing URLs
+            soup = BeautifulSoup(html_content, 'html.parser')
             
-        # Return the cleaned HTML
-        return str(soup)
+            # Only add target="_blank" to links without changing the URLs
+            for a_tag in soup.find_all('a'):
+                if 'href' in a_tag.attrs:
+                    a_tag['target'] = '_blank'
+                    
+            # Add title if missing
+            if not soup.find('h1'):
+                title_div = soup.new_tag('h1')
+                title_div.string = 'Greek Domestic News Summary'
+                soup.insert(0, title_div)
+                
+            return str(soup)
+        else:
+            # If not HTML, just wrap in simple tags
+            return f"<div class='news-summary'><h1>Greek Domestic News Summary</h1><p>{html_content}</p></div>"
     except Exception as e:
         logger.error(f"Error cleaning HTML content: {str(e)}")
-        # If there's an error in cleaning, wrap the content in safe HTML
-        return f"<div class='news-summary'><h1>Greek Domestic News Summary</h1><p>{html_content}</p></div>"
+        # If there's an error in cleaning, return original content
+        return html_content
 
 def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -118,16 +104,16 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     
     user_prompt += """
     Please analyze these articles and provide:
-    1. The top 12 most important and UNIQUE news stories about Greek domestic affairs in English
+    1. EXACTLY 12 news stories about Greek domestic affairs in English. You must ALWAYS include 12 stories, not less.
     2. For each story include: a title, 2-3 sentence summary, source, and URL to original article
     3. Format the output as HTML with proper styling and formatting
-    4. For each article, ALWAYS include the exact URL provided with the article using HTML like this:
-       <a href="THE_EXACT_URL_PROVIDED" target="_blank" class="read-more">Read Full Article</a>
-    5. Make sure all URLs are complete (starting with http:// or https://) and properly formatted with no spaces
-    6. Only include recent news from 2023-2024 - avoid older stories
+    4. For each article, ALWAYS include the EXACT and COMPLETE URL from the article data, formatted exactly like this:
+       <a href="THE_EXACT_COMPLETE_URL" target="_blank" class="read-more">Read Full Article</a>
+    5. Make absolutely sure to retain the EXACT URLs as provided without modification, do not change them at all
+    6. Do not modify or rewrite any URLs, even if they appear to be incorrect
     7. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
-    8. Avoid duplicate stories across different sources
-    9. Only include factual information from the articles
+    8. Only include factual information from the articles
+    9. Your response MUST have exactly 12 stories, please check your work carefully
     """
     
     # Make the request to Mistral AI

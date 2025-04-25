@@ -165,55 +165,44 @@ def scrape_news():
     """Scrape news from all sources and their articles."""
     all_news_data = []
     
-    # Use a diverse set of sources to get better coverage
-    # Selecting some mainstream Greek news sources (focusing on stable, well-known sites)
-    diverse_sources = [
-        "https://www.kathimerini.gr/",
-        "https://www.tanea.gr/",
-        "https://www.protothema.gr/",
-        "https://www.iefimerida.gr/",
-        "https://www.newsit.gr/",
-        "https://www.in.gr/"
-    ]
+    # Limit the number of sources to prevent timeouts
+    limited_sources = NEWS_SOURCES[:6]  # Just use 6 sources to get better diversity
+    logger.info(f"Using limited sources: {limited_sources}")
     
-    logger.info(f"Using diverse sources: {diverse_sources}")
+    # Start with a list to hold all article URLs
+    all_article_urls = []
     
     # Get article URLs from each news source homepage
-    all_article_urls = []
-    for source_url in diverse_sources:
+    for source_url in limited_sources:
         try:
-            # Get article links from each source
-            article_urls = get_news_links(source_url, 3) # Reduced from 5 to 3 for stability
+            article_urls = get_news_links(source_url, 4)  # Get 4 articles from each source
             if article_urls:
-                # Add URLs from this source (for balance)
                 all_article_urls.extend(article_urls)
                 logger.debug(f"Added {len(article_urls)} links from {source_url}")
         except Exception as e:
             logger.error(f"Error processing source {source_url}: {str(e)}")
     
-    # Limit total to prevent timeouts (max 12 articles)
-    if len(all_article_urls) > 12:
-        all_article_urls = all_article_urls[:12]
+    # Limit the total number of articles to scrape to prevent timeouts
+    # but ensure we have enough to get 12 good articles
+    if len(all_article_urls) > 20:
+        all_article_urls = all_article_urls[:20]
     
-    logger.info(f"Found {len(all_article_urls)} article URLs to scrape")
+    logger.info(f"Limited to {len(all_article_urls)} article URLs to scrape")
     
     # Use ThreadPoolExecutor to scrape articles in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_to_url = {executor.submit(scrape_article, url): url for url in all_article_urls}
         
         for future in concurrent.futures.as_completed(future_to_url):
             url = future_to_url[future]
             try:
                 article_data = future.result()
-                # Only add well-formed articles with content
                 if article_data and article_data.get("content"):
-                    # Test to see if the URL is valid and accessible before adding
-                    logger.debug(f"Adding article: {article_data.get('title', 'Untitled')} from {article_data.get('source', 'Unknown')}")
                     all_news_data.append(article_data)
             except Exception as e:
                 logger.error(f"Error processing article {url}: {str(e)}")
     
-    # Sort by length of content as a rough heuristic for article quality
+    # Sort by length of content as a rough heuristic for article completeness
     all_news_data.sort(key=lambda x: len(x.get("content", "")), reverse=True)
     
     logger.info(f"Successfully scraped {len(all_news_data)} articles")
