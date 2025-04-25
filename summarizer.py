@@ -158,33 +158,42 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
             user_prompt += "Content: [No content available]\n\n"
     
     user_prompt += """
-    Please analyze these articles and provide:
-    1. *** YOU MUST INCLUDE EXACTLY 12 STORIES - THIS IS THE TOP PRIORITY REQUIREMENT ***
-    2. Provide EXACTLY 12 news stories about Greek domestic affairs in English - not 3, not 10, but EXACTLY 12.
-    3. For each story include: a title, 2-3 sentence summary, source, and URL to original article
-    4. Format the output using the EXACT HTML structure shown below - follow this format EXACTLY:
+    YOUR MOST IMPORTANT TASK IS TO CREATE AN HTML PAGE WITH EXACTLY 12 NEWS STORIES.
+    
+    CRITICAL INSTRUCTIONS (FAILURE TO FOLLOW WILL RESULT IN REJECTION):
+    1. Your response MUST contain EXACTLY 12 stories - no more, no less.
+    2. You MUST use the exact HTML structure specified below.
+    3. Your response must be pure HTML ONLY with no explanatory text.
+    4. Start directly with <h1> and end with the last </a> tag.
+    
+    CONTENT GUIDELINES:
+    1. Choose 12 different news stories about Greek domestic affairs 
+    2. Prioritize news occurring INSIDE Greece (not international news)
+    3. For each story include: title, 2-3 sentence summary, source, and original URL
+    4. Use only factual information from the articles (no opinions or creativity)
+    5. Translate everything to English
+    
+    RESPONSE FORMAT - FOLLOW THIS EXACTLY WITHOUT DEVIATION:
     
     <h1>Greek Domestic News Summary</h1>
     
-    <h2>1. [Story Title Here]</h2>
-    <p>[2-3 sentence summary here]</p>
-    <p class="news-source">Source: [Source Name]</p>
+    <h2>1. [STORY TITLE]</h2>
+    <p>[2-3 SENTENCE SUMMARY]</p>
+    <p class="news-source">Source: [SOURCE NAME]</p>
     <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
     
-    <h2>2. [Next Story Title]</h2>
-    <p>[2-3 sentence summary here]</p>
-    <p class="news-source">Source: [Source Name]</p>
+    <h2>2. [STORY TITLE]</h2>
+    <p>[2-3 SENTENCE SUMMARY]</p>
+    <p class="news-source">Source: [SOURCE NAME]</p>
     <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
     
-    ... and so on for all 12 stories
+    [CONTINUE THIS EXACT PATTERN FOR ALL 12 STORIES]
     
-    5. Make absolutely sure to retain the EXACT URLs as provided without modification, do not change them at all
-    6. Follow the HTML structure exactly with h1, h2, p, and a elements with the exact classes shown
-    7. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
-    8. Only include factual information from the articles
-    9. Count your stories to ensure you have EXACTLY 12 stories - this is a strict requirement
-    
-    *** FINAL CHECK: YOU MUST VERIFY THAT YOUR RESPONSE CONTAINS EXACTLY 12 STORIES WITH PROPER HTML FORMATTING ***
+    FINAL VERIFICATION STEPS - YOU MUST DO THESE:
+    1. Count and ensure you have EXACTLY 12 <h2> tags with 12 article titles
+    2. Verify all 12 <a> tags have complete and unmodified URLs
+    3. Check that your output has no extra explanatory text
+    4. Confirm your response is pure HTML starting with <h1> and ending with the last </a>
     """
     
     # Make the request to Mistral AI
@@ -197,15 +206,17 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "Authorization": f"Bearer {MISTRAL_API_KEY}"
             },
             json={
-                "model": "mistral-small",
+                "model": "mistral-medium",  # Using the more powerful model for better handling
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "temperature": 0.2,  # Low temperature for factual responses
-                "max_tokens": 4096  # Maximum token limit to ensure full 12 stories with details
+                "temperature": 0.1,  # Lower temperature for more deterministic responses
+                "max_tokens": 6000,  # Increased token limit for full 12 stories
+                "top_p": 0.95,      # More focused token selection
+                "random_seed": 42   # For consistency between runs
             },
-            timeout=240  # Doubled timeout for large responses with 12 articles
+            timeout=300  # Increased timeout for large responses with 12 articles
         )
         
         response.raise_for_status()
