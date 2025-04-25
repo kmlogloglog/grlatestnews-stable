@@ -64,18 +64,35 @@ def process_news():
             return jsonify({"status": "error", "message": f"Error summarizing news: {str(e)}"}), 500
         
         # Step 3: Send email with summarized news
-        logger.info(f"Sending email to {email}...")
+        email_sent = False
+        email_error = None
+        
+        logger.info(f"Attempting to send email to {email}...")
         try:
             send_email(email, summarized_news)
             logger.info(f"Email sent successfully to {email}")
+            email_sent = True
         except Exception as e:
-            logger.error(f"Error sending email: {str(e)}")
-            return jsonify({"status": "error", "message": f"Error sending email: {str(e)}"}), 500
+            email_error = str(e)
+            logger.error(f"Error sending email: {email_error}")
+            # Continue with fallback instead of returning error immediately
         
-        return jsonify({
-            "status": "success", 
-            "message": "News processed and email sent successfully! Please check your inbox (and spam folder) for the Greek news summary."
-        })
+        # Prepare response
+        if email_sent:
+            # Email sent successfully
+            return jsonify({
+                "status": "success",
+                "message": "News processed and email sent successfully! Please check your inbox (and spam folder) for the Greek news summary."
+            })
+        else:
+            # Email failed - return content for fallback display
+            logger.info("Email sending failed. Returning HTML content for fallback display.")
+            return jsonify({
+                "status": "error",
+                "message": f"Could not send email: {email_error}. Displaying summary below instead.",
+                "html_content": summarized_news["html_content"]
+            })
+            
     except Exception as e:
         logger.error(f"Unexpected error in process_news: {str(e)}")
         return jsonify({"status": "error", "message": "An unexpected error occurred. Please try again later."}), 500

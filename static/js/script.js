@@ -4,6 +4,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnText = document.getElementById('btnText');
     const btnSpinner = document.getElementById('btnSpinner');
     const alertContainer = document.getElementById('alertContainer');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const summaryContent = document.getElementById('summaryContent');
 
     newsForm.addEventListener('submit', function(event) {
         event.preventDefault();
@@ -21,9 +23,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Show loading state
         setLoading(true);
         
-        // Clear previous alerts
+        // Clear previous alerts and results
         alertContainer.innerHTML = '';
         alertContainer.classList.add('d-none');
+        resultsContainer.classList.add('d-none');
+        summaryContent.innerHTML = '';
         
         // Send request to process news
         fetch('/process_news', {
@@ -39,6 +43,11 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Show success or error message
             showAlert(data.status === 'success' ? 'success' : 'danger', data.message);
+            
+            // If there's fallback content, display it
+            if (data.html_content) {
+                showSummaryContent(data.html_content);
+            }
         })
         .catch(error => {
             console.error('Error:', error);
@@ -67,5 +76,13 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         alertContainer.classList.remove('d-none');
+    }
+    
+    function showSummaryContent(html) {
+        summaryContent.innerHTML = html;
+        resultsContainer.classList.remove('d-none');
+        
+        // Scroll to results container
+        resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 });
