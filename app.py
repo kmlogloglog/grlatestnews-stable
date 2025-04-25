@@ -25,7 +25,8 @@ def process_news():
         # Always set content type to ensure proper JSON parsing
         response_headers = {"Content-Type": "application/json"}
         
-        logger.info("Starting news processing...")
+        # Set a longer timeout for the entire request (5 minutes)
+        logger.info("Starting news processing with extended timeout...")
         
         # Step 1: Scrape news from Greek websites
         logger.info("Starting web scraping...")

@@ -93,27 +93,31 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         user_prompt += f"Source: {article.get('source', 'Unknown Source')}\n"
         user_prompt += f"URL: {article.get('url', 'Unknown URL')}\n"
         
-        # Limit content length to avoid token limits
+        # Limit content length to avoid token limits - shorter to save tokens for output
         content = article.get('content', '')
         if content:
-            if len(content) > 1500:
-                content = content[:1500] + "..."
+            if len(content) > 1000:  # Reduced from 1500
+                content = content[:1000] + "..."
             user_prompt += f"Content:\n{content}\n\n"
         else:
             user_prompt += "Content: [No content available]\n\n"
     
     user_prompt += """
     Please analyze these articles and provide:
-    1. EXACTLY 12 news stories about Greek domestic affairs in English. You must ALWAYS include 12 stories, not less.
-    2. For each story include: a title, 2-3 sentence summary, source, and URL to original article
-    3. Format the output as HTML with proper styling and formatting
-    4. For each article, ALWAYS include the EXACT and COMPLETE URL from the article data, formatted exactly like this:
+    1. *** YOU MUST INCLUDE EXACTLY 12 STORIES - THIS IS THE TOP PRIORITY REQUIREMENT ***
+    2. Provide EXACTLY 12 news stories about Greek domestic affairs in English - not 3, not 10, but EXACTLY 12.
+    3. For each story include: a title, 2-3 sentence summary, source, and URL to original article
+    4. Format the output as HTML with proper styling and formatting
+    5. For each article, ALWAYS include the EXACT and COMPLETE URL from the article data, formatted exactly like this:
        <a href="THE_EXACT_COMPLETE_URL" target="_blank" class="read-more">Read Full Article</a>
-    5. Make absolutely sure to retain the EXACT URLs as provided without modification, do not change them at all
-    6. Do not modify or rewrite any URLs, even if they appear to be incorrect
-    7. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
-    8. Only include factual information from the articles
-    9. Your response MUST have exactly 12 stories, please check your work carefully
+    6. Make absolutely sure to retain the EXACT URLs as provided without modification, do not change them at all
+    7. Do not modify or rewrite any URLs, even if they appear to be incorrect
+    8. Prioritize news occurring INSIDE Greece and avoid international news unless it directly affects Greece
+    9. Only include factual information from the articles
+    10. Count your stories at the end to ensure you have EXACTLY 12 stories - this is a strict requirement
+    11. If you don't have enough unique stories, you can include less important news as long as they are recent and from Greece
+    
+    *** FINAL CHECK: YOU MUST VERIFY THAT YOUR RESPONSE CONTAINS EXACTLY 12 STORIES ***
     """
     
     # Make the request to Mistral AI
@@ -132,9 +136,9 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
                     {"role": "user", "content": user_prompt}
                 ],
                 "temperature": 0.2,  # Low temperature for factual responses
-                "max_tokens": 3072  # Increased token limit for 12 stories with details
+                "max_tokens": 4096  # Maximum token limit to ensure full 12 stories with details
             },
-            timeout=120  # Increased timeout for potentially large responses
+            timeout=240  # Doubled timeout for large responses with 12 articles
         )
         
         response.raise_for_status()
