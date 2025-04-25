@@ -73,7 +73,39 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function showSummaryContent(html) {
-        summaryContent.innerHTML = html;
+        // Sanitize and process the HTML content
+        try {
+            // Clean up any unwanted text before the HTML
+            let cleanHtml = html;
+            const h1Index = html.indexOf('<h1>');
+            
+            if (h1Index > 0) {
+                // Found an h1 tag, extract everything from there
+                cleanHtml = html.substring(h1Index);
+                console.log("Extracted clean HTML starting from h1 tag");
+            }
+            
+            // Set the content
+            summaryContent.innerHTML = cleanHtml;
+            
+            // Check if content was properly set
+            if (summaryContent.innerHTML.includes('<h1>')) {
+                console.log("Successfully injected HTML with h1 tag");
+            } else {
+                console.log("HTML injection may have failed, content doesn't contain h1 tag");
+                
+                // Fallback to a simple display
+                summaryContent.innerHTML = `
+                    <h1>Greek Domestic News Summary</h1>
+                    <p>There was an issue formatting the news. The raw content is below:</p>
+                    <pre>${html}</pre>
+                `;
+            }
+        } catch (error) {
+            console.error("Error handling HTML content:", error);
+            summaryContent.innerHTML = "<h1>Error Processing News</h1><p>There was an error processing the news content. Please try again.</p>";
+        }
+        
         resultsContainer.classList.remove('d-none');
         
         // Scroll to results container

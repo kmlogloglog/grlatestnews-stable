@@ -24,46 +24,80 @@ def clean_html_content(html_content):
         Cleaned and properly formatted HTML content
     """
     try:
-        # Check if content contains any HTML tags
-        if '<' in html_content and '>' in html_content:
-            # Extract just the HTML part if there's markdown or other text before/after it
+        # Check if content already has HTML tags
+        has_html = '<h1>' in html_content or '<h2>' in html_content
+        
+        if has_html:
+            # The response might contain explanatory text before the actual HTML content
+            # Let's try to extract just the HTML part
+            
+            # Find the HTML content start - usually with the first <h1> tag
             html_start = html_content.find('<h1>')
-            html_end = html_content.rfind('</a>') + 4  # Length of </a>
+            if html_start == -1:
+                # If no <h1>, try to find another HTML tag
+                for tag in ['<h2>', '<div>', '<p>']:
+                    html_start = html_content.find(tag)
+                    if html_start != -1:
+                        break
             
-            if html_start >= 0 and html_end > html_start:
-                html_content = html_content[html_start:html_end]
+            # If we found an HTML tag, extract from there to the end
+            if html_start != -1:
+                html_content = html_content[html_start:]
+                logger.info("Extracted HTML content starting with a tag")
             
-            # Parse and clean the HTML
+            # Parse with BeautifulSoup to clean up the HTML
             soup = BeautifulSoup(html_content, 'html.parser')
             
             # Make sure all links have target="_blank" and proper class
             for a_tag in soup.find_all('a'):
                 if 'href' in a_tag.attrs:
-                    # Ensure URL is properly formed but don't change the actual URL
-                    url = a_tag['href'].strip()
+                    # Keep the URL exactly as is but add target and class
                     a_tag['target'] = '_blank'
-                    if 'class' not in a_tag.attrs or 'read-more' not in a_tag.attrs['class']:
-                        a_tag['class'] = 'read-more'
+                    a_tag['class'] = 'read-more'
             
-            # Add title if missing
-            if not soup.find('h1'):
-                title_div = soup.new_tag('h1')
-                title_div.string = 'Greek Domestic News Summary'
-                soup.insert(0, title_div)
+            # Make sure we have a title
+            h1_tag = soup.find('h1')
+            if not h1_tag:
+                h1_tag = soup.new_tag('h1')
+                h1_tag.string = 'Greek Domestic News Summary'
+                soup.insert(0, h1_tag)
             
-            # Count the number of news stories (h2 tags) and ensure there are 12
+            # Count news stories and log
             h2_tags = soup.find_all('h2')
-            if len(h2_tags) < 12:
-                logger.warning(f"Only found {len(h2_tags)} news stories, expected 12")
+            logger.info(f"Found {len(h2_tags)} news stories in the response")
+            
+            # Check for proper formatting
+            if len(h2_tags) < 1:
+                # If there are no h2 tags, the HTML might be malformed
+                # Let's create a simple structured summary instead
+                logger.warning("No news items found in HTML response, creating fallback structure")
                 
+                fallback_soup = BeautifulSoup("<h1>Greek Domestic News Summary</h1>", 'html.parser')
+                
+                # Add a paragraph explaining the issue
+                p_tag = soup.new_tag('p')
+                p_tag.string = "The content could not be properly formatted. Please try again."
+                fallback_soup.append(p_tag)
+                
+                # Add whatever content we received 
+                pre_tag = soup.new_tag('pre')
+                pre_tag.string = html_content
+                fallback_soup.append(pre_tag)
+                
+                return str(fallback_soup)
+            
             return str(soup)
+            
         else:
-            # If not HTML, just wrap in simple tags
-            return f"<div class='news-summary'><h1>Greek Domestic News Summary</h1><p>{html_content}</p></div>"
+            # If response doesn't contain HTML, wrap it in a simple structure
+            logger.warning("Response doesn't contain HTML tags, creating structured content")
+            clean_content = html_content.replace('<', '&lt;').replace('>', '&gt;')
+            return f"<h1>Greek Domestic News Summary</h1><p>The content could not be properly formatted.</p><pre>{clean_content}</pre>"
+    
     except Exception as e:
         logger.error(f"Error cleaning HTML content: {str(e)}")
-        # If there's an error in cleaning, return a safe fallback
-        return f"<div class='news-summary'><h1>Greek Domestic News Summary</h1><p>There was an error processing the news content. Please try again.</p></div>"
+        # Return a safe fallback in case of any error
+        return "<h1>Greek Domestic News Summary</h1><p>There was an error processing the news content. Please try again.</p>"
 
 def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -92,7 +126,12 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     7. Group related stories together
     8. Include the source website and original URL for each story
     
-    Your output should be structured in HTML format with proper formatting and include a link to the original article.
+    CRITICAL INSTRUCTIONS:
+    1. Your output must be PURE HTML ONLY - do not include any explanation text before or after the HTML
+    2. Do not begin with "Here is the summary" or any similar text
+    3. Start directly with the <h1> tag and end with the final </a> tag
+    4. Follow the exact HTML structure specified in the prompt
+    5. Verify that your output is valid HTML that can be directly injected into a webpage
     """
     
     # Prepare the input for Mistral AI
