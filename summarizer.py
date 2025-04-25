@@ -2,7 +2,9 @@ import os
 import logging
 import json
 import requests
+import re
 from typing import List, Dict, Any
+from bs4 import BeautifulSoup
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -10,6 +12,56 @@ logger = logging.getLogger(__name__)
 # Mistral AI API configuration
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+
+def clean_html_content(html_content):
+    """
+    Clean and process the HTML content to ensure it's well-formed.
+    
+    Args:
+        html_content: Raw HTML content from the API
+        
+    Returns:
+        Cleaned and properly formatted HTML content
+    """
+    try:
+        # First, check if the content is already wrapped in HTML tags
+        if not html_content.strip().startswith('<'):
+            # If not HTML, wrap it in proper tags
+            html_content = f"<div class='news-summary'>{html_content}</div>"
+        
+        # Use BeautifulSoup to parse and fix any HTML issues
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Ensure all links have target="_blank" and proper class
+        for a_tag in soup.find_all('a'):
+            if 'href' in a_tag.attrs:
+                # Fix URLs that might be malformed
+                url = a_tag['href'].strip()
+                if url and not url.startswith(('http://', 'https://')):
+                    # Try to fix the URL if possible
+                    if url.startswith('www.'):
+                        url = 'https://' + url
+                    # If still not valid, just ensure it doesn't break things
+                    if not url.startswith(('http://', 'https://', '#', '/')):
+                        url = '#'  # Fallback to prevent broken links
+                
+                a_tag['href'] = url
+                a_tag['target'] = '_blank'
+                if 'read' in a_tag.text.lower() or 'article' in a_tag.text.lower():
+                    a_tag['class'] = 'read-more'
+        
+        # Add title if missing
+        if not soup.find('h1'):
+            title_div = soup.new_tag('h1')
+            title_div.string = 'Greek Domestic News Summary'
+            soup.insert(0, title_div)
+            
+        # Return the cleaned HTML
+        return str(soup)
+    except Exception as e:
+        logger.error(f"Error cleaning HTML content: {str(e)}")
+        # If there's an error in cleaning, wrap the content in safe HTML
+        return f"<div class='news-summary'><h1>Greek Domestic News Summary</h1><p>{html_content}</p></div>"
 
 def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -107,9 +159,12 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Extract the summary content
         summary_content = result["choices"][0]["message"]["content"]
         
+        # Clean and wrap the summary content to ensure it's well-formed HTML
+        cleaned_summary = clean_html_content(summary_content)
+        
         # Prepare the final output
         output = {
-            "html_content": summary_content,
+            "html_content": cleaned_summary,
             "article_count": len(selected_articles),
             "sources": list(set(article.get('source', '') for article in selected_articles))
         }

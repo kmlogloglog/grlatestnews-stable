@@ -166,7 +166,7 @@ def scrape_news():
     all_news_data = []
     
     # Use a diverse set of sources to get better coverage
-    # Selecting some mainstream Greek news sources
+    # Selecting some mainstream Greek news sources (focusing on stable, well-known sites)
     diverse_sources = [
         "https://www.kathimerini.gr/",
         "https://www.tanea.gr/",
@@ -182,20 +182,20 @@ def scrape_news():
     all_article_urls = []
     for source_url in diverse_sources:
         try:
-            # Get up to 5 article links from each source
-            article_urls = get_news_links(source_url, 5)
+            # Get article links from each source
+            article_urls = get_news_links(source_url, 3) # Reduced from 5 to 3 for stability
             if article_urls:
-                # Add up to 3 URLs from this source (for balance)
-                all_article_urls.extend(article_urls[:3])
-                logger.debug(f"Added {len(article_urls[:3])} links from {source_url}")
+                # Add URLs from this source (for balance)
+                all_article_urls.extend(article_urls)
+                logger.debug(f"Added {len(article_urls)} links from {source_url}")
         except Exception as e:
             logger.error(f"Error processing source {source_url}: {str(e)}")
     
-    # Limit total to prevent timeouts (max 15 articles)
-    if len(all_article_urls) > 15:
-        all_article_urls = all_article_urls[:15]
+    # Limit total to prevent timeouts (max 12 articles)
+    if len(all_article_urls) > 12:
+        all_article_urls = all_article_urls[:12]
     
-    logger.info(f"Found {len(all_article_urls)} article URLs to scrape across {len(diverse_sources)} sources")
+    logger.info(f"Found {len(all_article_urls)} article URLs to scrape")
     
     # Use ThreadPoolExecutor to scrape articles in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
@@ -205,12 +205,11 @@ def scrape_news():
             url = future_to_url[future]
             try:
                 article_data = future.result()
+                # Only add well-formed articles with content
                 if article_data and article_data.get("content"):
-                    # Make sure URL is properly formed and accessible
-                    if article_data.get("url") and article_data["url"].startswith("http"):
-                        # Test to see if the URL is valid and accessible before adding
-                        logger.debug(f"Adding article: {article_data.get('title', 'Untitled')} from {article_data.get('source', 'Unknown')}")
-                        all_news_data.append(article_data)
+                    # Test to see if the URL is valid and accessible before adding
+                    logger.debug(f"Adding article: {article_data.get('title', 'Untitled')} from {article_data.get('source', 'Unknown')}")
+                    all_news_data.append(article_data)
             except Exception as e:
                 logger.error(f"Error processing article {url}: {str(e)}")
     
