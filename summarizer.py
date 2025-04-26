@@ -6,13 +6,13 @@ import re
 import html
 from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
+from mistralai.client import MistralClient as Mistral
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Mistral AI API configuration
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
-MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
 def create_fallback_output(articles: List[Dict[str, Any]], error_message: str) -> Dict[str, Any]:
     """
@@ -236,32 +236,25 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         FINAL CHECK: COUNT YOUR STORIES AND VERIFY YOU HAVE EXACTLY 12.
         """
         
-        # Make the API request
-        logger.debug("Sending request to Mistral AI")
-        response = requests.post(
-            MISTRAL_API_URL,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {MISTRAL_API_KEY}"
-            },
-            json={
-                "model": "mistral-small",  # Using smaller model for reliability
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.2,       # Lower temperature for more deterministic results
-                "max_tokens": 4000        # Need enough tokens for 12 stories
-            },
-            timeout=90  # 90 second timeout
+        # Create Mistral client
+        logger.debug("Creating Mistral client and sending request")
+        client = Mistral(api_key=MISTRAL_API_KEY)
+        
+        # Make the API request using the client library
+        response = client.chat.complete(
+            model="mistral-large-latest",  # Using the model as specified by user
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2,       # Lower temperature for more deterministic results
+            max_tokens=4000        # Need enough tokens for 12 stories
         )
         
-        response.raise_for_status()
-        result = response.json()
         logger.debug("Received response from Mistral AI")
         
         # Extract and clean the content
-        summary_content = result["choices"][0]["message"]["content"]
+        summary_content = response.choices[0].message.content
         cleaned_summary = clean_html_content(summary_content)
         
         # Verify we got proper HTML with multiple news entries
@@ -281,13 +274,9 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
             logger.warning(f"API returned only {story_count} stories, using fallback")
             return create_direct_output(news_data, "API returned insufficient stories")
             
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error making request to Mistral AI: {str(e)}")
-        return create_direct_output(news_data, f"API Connection Error: {str(e)}")
-        
     except Exception as e:
-        logger.error(f"Unexpected error in summarization: {str(e)}")
-        return create_direct_output(news_data, f"Summarization Error: {str(e)}")
+        logger.error(f"Error with Mistral AI: {str(e)}")
+        return create_direct_output(news_data, f"Translation Error: {str(e)}")
 
 
 def create_direct_output(news_data: List[Dict[str, Any]], error_message: Optional[str] = None) -> Dict[str, Any]:
