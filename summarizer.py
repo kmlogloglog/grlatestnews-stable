@@ -6,7 +6,6 @@ import re
 import html
 from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
-from mistralai.client import MistralClient as Mistral
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -236,25 +235,41 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         FINAL CHECK: COUNT YOUR STORIES AND VERIFY YOU HAVE EXACTLY 12.
         """
         
-        # Create Mistral client
-        logger.debug("Creating Mistral client and sending request")
-        client = Mistral(api_key=MISTRAL_API_KEY)
+        # Use direct API calls with requests instead of the client library
+        logger.debug("Sending request to Mistral API")
         
-        # Make the API request using the client library
-        response = client.chat.complete(
-            model="mistral-large-latest",  # Using the model as specified by user
-            messages=[
+        # Prepare API request
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {MISTRAL_API_KEY}"
+        }
+        
+        payload = {
+            "model": "mistral-large-latest",
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.2,       # Lower temperature for more deterministic results
-            max_tokens=4000        # Need enough tokens for 12 stories
+            "temperature": 0.2,
+            "max_tokens": 4000
+        }
+        
+        # Make the API request
+        response = requests.post(
+            "https://api.mistral.ai/v1/chat/completions",
+            headers=headers,
+            json=payload
         )
         
+        if response.status_code != 200:
+            logger.error(f"Mistral API error: {response.status_code} - {response.text}")
+            raise Exception(f"API error: {response.status_code} - {response.text[:100]}")
+            
+        response_data = response.json()
         logger.debug("Received response from Mistral AI")
         
         # Extract and clean the content
-        summary_content = response.choices[0].message.content
+        summary_content = response_data["choices"][0]["message"]["content"]
         cleaned_summary = clean_html_content(summary_content)
         
         # Verify we got proper HTML with multiple news entries
