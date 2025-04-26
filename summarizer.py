@@ -155,6 +155,48 @@ def clean_html_content(html_content: str) -> str:
         # Return a safe fallback in case of unexpected cleaning errors
         return f"<h1>Greek Domestic News Summary</h1><p>There was an error processing the news content received from the AI. Details: {html.escape(str(e))}</p>"
 
+def validate_mistral_api_key(api_key: str) -> bool:
+    """
+    Tests whether the provided Mistral API key is valid by making a minimal request.
+    
+    Args:
+        api_key: The Mistral API key to validate
+        
+    Returns:
+        Boolean indicating if the key is valid
+    """
+    if not api_key:
+        return False
+        
+    try:
+        # Prepare a minimal validation request
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        # Just get the list of available models (small request)
+        test_url = "https://api.mistral.ai/v1/models"
+        
+        # Short timeout - we just want to check auth
+        response = requests.get(test_url, headers=headers, timeout=5)
+        
+        # If we get 200, key is valid, if 401 it's invalid
+        if response.status_code == 200:
+            logger.info("Mistral API key validated successfully")
+            return True
+        elif response.status_code == 401:
+            logger.error("Mistral API key is invalid (authentication failed)")
+            return False
+        else:
+            logger.warning(f"Unexpected status code when validating API key: {response.status_code}")
+            # Give benefit of doubt if it's a server error
+            return response.status_code < 500
+        
+    except Exception as e:
+        logger.error(f"Error validating Mistral API key: {str(e)}")
+        return False
+
 def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Summarizes and translates Greek news using Mistral AI.
@@ -171,10 +213,14 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     if not MISTRAL_API_KEY:
         logger.error("MISTRAL_API_KEY environment variable not set or empty.")
-        return create_direct_output(news_data, "Missing Mistral API Key configuration")
+        return create_direct_output(news_data, "Missing Mistral API Key - please set the MISTRAL_API_KEY environment variable")
     else:
         # Log confirmation but mask the key for security
         logger.info(f"Mistral API Key found (ending with ...{MISTRAL_API_KEY[-4:] if len(MISTRAL_API_KEY) > 4 else '****'})")
+        
+        # Validate the key before proceeding
+        if not validate_mistral_api_key(MISTRAL_API_KEY):
+            return create_direct_output(news_data, "Invalid Mistral API Key - authentication failed")
 
     try:
         # System Prompt: Keep it concise and focused on the task and format.
@@ -240,7 +286,29 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
 
         api_url = "https://api.mistral.ai/v1/chat/completions"
-        response = requests.post(api_url, headers=headers, json=payload, timeout=120)  # Add timeout
+        
+        # First attempt with full configuration
+        try:
+            logger.info("Making primary API request with full configuration")
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            logger.warning(f"Primary API request failed with network error: {str(e)}. Trying fallback request with simpler configuration.")
+            
+            # Fallback with simpler payload if the first attempt fails with a network error
+            fallback_payload = {
+                "model": "mistral-medium",  # Try a smaller, more reliable model
+                "messages": [
+                    {"role": "system", "content": "Translate Greek news to English and summarize."},
+                    {"role": "user", "content": f"Translate these Greek news titles to English:\n\n" + 
+                                               "\n".join([f"{i+1}. {art.get('title', 'No title')}" 
+                                                         for i, art in enumerate(selected_articles[:10])])}
+                ],
+                "temperature": 0.1,  # More deterministic
+                "max_tokens": 2048   # Smaller response
+            }
+            
+            # Second attempt with fallback configuration
+            response = requests.post(api_url, headers=headers, json=fallback_payload, timeout=60)
 
         # --- Response Handling ---
         if response.status_code == 200:
