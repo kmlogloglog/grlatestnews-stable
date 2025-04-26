@@ -4,10 +4,15 @@ import json
 import requests
 import re
 import html
+import traceback  # Added for detailed error logging
 from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
 
 # Configure logging
+logging.basicConfig(
+    level=logging.INFO,  # Set to DEBUG for very verbose output
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Mistral AI API configuration
@@ -68,304 +73,330 @@ def create_fallback_output(articles: List[Dict[str, Any]], error_message: str) -
         "error": error_message
     }
 
-def clean_html_content(html_content):
+def clean_html_content(html_content: str) -> str:
     """
-    Clean and process the HTML content to ensure it's well-formed.
-    
+    Clean and process the HTML content from the API response.
+
     Args:
         html_content: Raw HTML content from the API
-        
+
     Returns:
-        Cleaned and properly formatted HTML content
+        Cleaned and properly formatted HTML content string
     """
     try:
-        # Check if content already has HTML tags
-        has_html = '<h1>' in html_content or '<h2>' in html_content
-        
-        if has_html:
-            # The response might contain explanatory text before the actual HTML content
-            # Let's try to extract just the HTML part
-            
-            # Find the HTML content start - usually with the first <h1> tag
-            html_start = html_content.find('<h1>')
-            if html_start == -1:
-                # If no <h1>, try to find another HTML tag
-                for tag in ['<h2>', '<div>', '<p>']:
-                    html_start = html_content.find(tag)
-                    if html_start != -1:
-                        break
-            
-            # If we found an HTML tag, extract from there to the end
-            if html_start != -1:
-                html_content = html_content[html_start:]
-                logger.info("Extracted HTML content starting with a tag")
-            
-            # Parse with BeautifulSoup to clean up the HTML
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # Make sure all links have target="_blank" and proper class
-            for a_tag in soup.find_all('a'):
-                if 'href' in a_tag.attrs:
-                    # Keep the URL exactly as is but add target and class
-                    a_tag['target'] = '_blank'
-                    a_tag['class'] = 'read-more'
-            
-            # Make sure we have a title
-            h1_tag = soup.find('h1')
-            if not h1_tag:
-                h1_tag = soup.new_tag('h1')
-                h1_tag.string = 'Greek Domestic News Summary'
-                soup.insert(0, h1_tag)
-            
-            # Count news stories and log
-            h2_tags = soup.find_all('h2')
-            logger.info(f"Found {len(h2_tags)} news stories in the response")
-            
-            # Check for proper formatting
-            if len(h2_tags) < 1:
-                # If there are no h2 tags, the HTML might be malformed
-                # Let's create a simple structured summary instead
-                logger.warning("No news items found in HTML response, creating fallback structure")
-                
-                fallback_soup = BeautifulSoup("<h1>Greek Domestic News Summary</h1>", 'html.parser')
-                
-                # Add a paragraph explaining the issue
-                p_tag = soup.new_tag('p')
-                p_tag.string = "The content could not be properly formatted. Please try again."
-                fallback_soup.append(p_tag)
-                
-                # Add whatever content we received 
-                pre_tag = soup.new_tag('pre')
-                pre_tag.string = html_content
-                fallback_soup.append(pre_tag)
-                
-                return str(fallback_soup)
-            
-            return str(soup)
-            
-        else:
-            # If response doesn't contain HTML, wrap it in a simple structure
-            logger.warning("Response doesn't contain HTML tags, creating structured content")
-            clean_content = html_content.replace('<', '&lt;').replace('>', '&gt;')
-            return f"<h1>Greek Domestic News Summary</h1><p>The content could not be properly formatted.</p><pre>{clean_content}</pre>"
-    
+        # Basic check if it looks like HTML
+        is_likely_html = '<' in html_content and '>' in html_content
+        if not is_likely_html:
+             logger.warning("Response doesn't seem to contain HTML tags. Wrapping raw content.")
+             clean_content = html.escape(html_content) # Escape any potential stray tags
+             return f"<h1>Greek Domestic News Summary</h1><p>The content received from the AI was not in the expected HTML format. Displaying raw response:</p><pre>{clean_content}</pre>"
+
+        # Try to find the start of the actual HTML content (e.g., starting with <h1>)
+        html_start_index = -1
+        potential_starts = ['<h1', '<div', '<p', '<h2']
+        for tag_start in potential_starts:
+            html_start_index = html_content.find(tag_start)
+            if html_start_index != -1:
+                break
+
+        if html_start_index > 0:
+            # Found a potential start tag after some introductory text
+            logger.info(f"Detected potential introductory text before HTML. Extracting from index {html_start_index}.")
+            html_content = html_content[html_start_index:]
+        elif html_start_index == -1:
+             logger.warning("Could not find standard starting HTML tags (h1, div, p, h2). Processing content as is.")
+             # Proceed, maybe it's just fragments
+
+        # Parse with BeautifulSoup to clean up and structure
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Ensure all links open in a new tab and have the correct class
+        for a_tag in soup.find_all('a'):
+            if a_tag.has_attr('href'):
+                a_tag['target'] = '_blank'
+                a_tag['class'] = 'read-more' # Ensure class consistency
+
+        # Ensure there's a main title (H1)
+        h1_tag = soup.find('h1')
+        if not h1_tag:
+            logger.warning("No H1 title found in the response. Adding a default title.")
+            new_h1 = soup.new_tag('h1')
+            new_h1.string = 'Greek Domestic News Summary'
+            # Try inserting at the beginning, handling potential parse issues
+            body_tag = soup.find('body')
+            if body_tag:
+                 body_tag.insert(0, new_h1)
+            else:
+                 # If no body, just prepend to the soup object (might result in slightly invalid structure but better than nothing)
+                 soup.insert(0, new_h1)
+
+        # Count stories for logging purposes
+        h2_tags = soup.find_all('h2')
+        logger.info(f"Found {len(h2_tags)} news items (H2 tags) in the cleaned HTML.")
+
+        # Basic validation: Check if there are actual news items (h2 tags)
+        if not h2_tags:
+            logger.warning("Cleaned HTML does not contain any H2 tags (news items). Returning a message.")
+            # Return a more informative message instead of potentially empty/malformed HTML
+            fallback_soup = BeautifulSoup("<h1>Greek Domestic News Summary</h1>", 'html.parser')
+            p_tag = fallback_soup.new_tag('p')
+            p_tag.string = "The AI response did not contain formatted news items as expected."
+            fallback_soup.append(p_tag)
+            pre_tag = fallback_soup.new_tag('pre')
+            # Show the original (before cleaning) content for debugging
+            pre_tag.string = html.escape(html_content[:1000]) + ("..." if len(html_content) > 1000 else "")
+            fallback_soup.append(pre_tag)
+            return str(fallback_soup)
+
+        return str(soup)
+
     except Exception as e:
-        logger.error(f"Error cleaning HTML content: {str(e)}")
-        # Return a safe fallback in case of any error
-        return "<h1>Greek Domestic News Summary</h1><p>There was an error processing the news content. Please try again.</p>"
+        logger.error(f"Error cleaning HTML content: {str(e)}", exc_info=True)
+        # Return a safe fallback in case of unexpected cleaning errors
+        return f"<h1>Greek Domestic News Summary</h1><p>There was an error processing the news content received from the AI. Details: {html.escape(str(e))}</p>"
 
 def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Summarize news data using Mistral AI with a focus on translation to English.
-    
+    Summarizes and translates Greek news using Mistral AI.
+
     Args:
-        news_data: List of dictionaries containing news articles
-        
+        news_data: List of dictionaries containing news articles.
+
     Returns:
-        Dictionary with summarized news content
+        Dictionary with summarized/translated HTML content or direct output on failure.
     """
+    if not news_data:
+        logger.warning("No news data provided to summarize.")
+        return create_direct_output([], "No articles found to process.")
+
     if not MISTRAL_API_KEY:
-        logger.error("Mistral API key not found in environment variables")
-        # Use direct display as fallback if no API key
-        return create_direct_output(news_data, "No Mistral API key provided")
-    
+        logger.error("MISTRAL_API_KEY environment variable not set or empty.")
+        return create_direct_output(news_data, "Missing Mistral API Key configuration")
+    else:
+        # Log confirmation but mask the key for security
+        logger.info(f"Mistral API Key found (ending with ...{MISTRAL_API_KEY[-4:] if len(MISTRAL_API_KEY) > 4 else '****'})")
+
     try:
-        # Keep system prompt very simple
+        # System Prompt: Keep it concise and focused on the task and format.
         system_prompt = """
-        Translate Greek news to English and format as HTML with exactly 12 news entries.
+        You are an expert translator and news summarizer. Your task is to translate Greek news articles into English and format them as clean HTML.
+        Follow the user's instructions precisely regarding the output format.
+        Output *only* the HTML structure requested, starting with <h1> and ending with the last </a> tag. Do not include any introductory or concluding text outside the HTML tags.
         """
-        
-        # Prepare the user prompt with the articles
-        user_prompt = "Here are the Greek news articles to translate and summarize:\n\n"
-        
-        # Limit to 20 articles to avoid token limits
-        max_articles = min(20, len(news_data))
-        selected_articles = news_data[:max_articles]
-        
-        # Add articles to the prompt with minimal content to reduce token usage
+
+        # User Prompt: Prepare article data and give explicit formatting instructions.
+        user_prompt = "Translate the following Greek news articles into English and create a summary HTML page.\n\n"
+
+        max_articles_to_send = 20  # Limit input to API
+        selected_articles = news_data[:min(max_articles_to_send, len(news_data))]
+        logger.info(f"Preparing {len(selected_articles)} articles for the API request.")
+
         for i, article in enumerate(selected_articles, 1):
-            user_prompt += f"ARTICLE {i}\n"
-            user_prompt += f"Title: {article.get('title', 'Unknown Title')}\n"
-            user_prompt += f"Source: {article.get('source', 'Unknown Source')}\n"
-            user_prompt += f"URL: {article.get('url', 'Unknown URL')}\n"
-            
-            # Use much shorter content snippets to save tokens
+            user_prompt += f"--- ARTICLE {i} ---\n"
+            user_prompt += f"TITLE_GR: {article.get('title', 'No Title Provided')}\n"
+            user_prompt += f"SOURCE: {article.get('source', 'Unknown Source')}\n"
+            user_prompt += f"URL: {article.get('url', 'No URL Provided')}\n"
             content = article.get('content', '')
-            if content:
-                # Just use the first 200 characters for translation context
-                snippet = content[:200] + "..." if len(content) > 200 else content
-                user_prompt += f"Content: {snippet}\n\n"
-            else:
-                user_prompt += "Content: [No content available]\n\n"
-        
-        # Add extremely explicit instructions to guarantee formatting
+            # Use a snippet for context, reduce token usage
+            snippet = (content[:250].strip() + "...") if len(content) > 250 else content.strip()
+            user_prompt += f"CONTENT_SNIPPET_GR: {snippet if snippet else '[No Content Snippet]'}\n\n"
+
         user_prompt += """
-        TRANSLATE EACH ARTICLE'S TITLE AND CONTENT FROM GREEK TO ENGLISH.
-        
-        FORMAT YOUR RESPONSE AS PURE HTML WITH EXACTLY 12 NEWS STORIES.
-        
-        YOU MUST FOLLOW THIS EXACT FORMAT:
-        
-<h1>Greek Domestic News Summary</h1>
+--- INSTRUCTIONS ---
+1.  Translate the TITLE_GR of each article to English.
+2.  Based on the TITLE_GR and CONTENT_SNIPPET_GR, write a concise 2-3 sentence summary in English for each article.
+3.  Format the output as *pure HTML*, containing exactly 12 news story entries (use the first 12 articles provided if more than 12 were sent).
+4.  Strictly adhere to this HTML structure for each of the 12 entries:
 
-<h2>1. [TRANSLATED TITLE IN ENGLISH]</h2>
-<p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
-<p class="news-source">Source: [SOURCE NAME]</p>
-<a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+    <h2>[INCREMENTING_NUMBER]. [TRANSLATED_ENGLISH_TITLE]</h2>
+    <p>[CONCISE_ENGLISH_SUMMARY]</p>
+    <p class="news-source">Source: [ORIGINAL_SOURCE_NAME]</p>
+    <a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
 
-<h2>2. [TRANSLATED TITLE IN ENGLISH]</h2>
-<p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
-<p class="news-source">Source: [SOURCE NAME]</p>
-<a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+5.  Start the entire response *directly* with a single main heading: <h1>Greek Domestic News Summary</h1>
+6.  Ensure all 12 entries follow the h2, p, p, a structure.
+7.  Use the exact URL provided for each article in the href attribute.
+8.  Do *not* add any text before the <h1> tag or after the final </a> tag.
+9.  Double-check: The final output must be valid HTML containing exactly one <h1> and exactly twelve <h2> sections.
+"""
 
-<h2>3. [TRANSLATED TITLE IN ENGLISH]</h2>
-<p>[2-3 SENTENCE SUMMARY IN ENGLISH]</p>
-<p class="news-source">Source: [SOURCE NAME]</p>
-<a href="[EXACT_ORIGINAL_URL]" target="_blank" class="read-more">Read Full Article</a>
+        logger.debug("Sending request to Mistral API...")
 
-        [AND SO ON UNTIL YOU HAVE EXACTLY 12 STORIES TOTAL]
-        
-        CRITICAL RULES:
-        1. START DIRECTLY WITH <h1> TAG - NO INTRODUCTORY TEXT
-        2. END WITH THE LAST </a> TAG - NO CONCLUSION OR EXPLANATION
-        3. INCLUDE EXACTLY 12 NEWS STORIES - EACH WITH h2, p, p.news-source, AND a TAGS
-        4. TRANSLATE ALL GREEK TEXT TO ENGLISH
-        5. KEEP ALL URLS EXACTLY AS PROVIDED - DO NOT MODIFY THEM
-        
-        FINAL CHECK: COUNT YOUR STORIES AND VERIFY YOU HAVE EXACTLY 12.
-        """
-        
-        # Use direct API calls with requests instead of the client library
-        logger.debug("Sending request to Mistral API")
-        
-        # Prepare API request
         headers = {
             "Content-Type": "application/json",
+            "Accept": "application/json",  # Explicitly accept JSON
             "Authorization": f"Bearer {MISTRAL_API_KEY}"
         }
-        
+
         payload = {
-            "model": "mistral-large-latest",
+            "model": "mistral-large-latest",  # Or your preferred model
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            "temperature": 0.2,
-            "max_tokens": 4000
+            "temperature": 0.3,  # Slightly creative but mostly factual
+            "max_tokens": 4096,  # Allow ample space for 12 summaries + HTML
+            "response_format": {"type": "text"}  # Ensure text response format
         }
-        
-        # Make the API request
-        response = requests.post(
-            "https://api.mistral.ai/v1/chat/completions",
-            headers=headers,
-            json=payload
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"Mistral API error: {response.status_code} - {response.text}")
-            raise Exception(f"API error: {response.status_code} - {response.text[:100]}")
-            
-        response_data = response.json()
-        logger.debug("Received response from Mistral AI")
-        
-        # Extract and clean the content
-        summary_content = response_data["choices"][0]["message"]["content"]
-        cleaned_summary = clean_html_content(summary_content)
-        
-        # Verify we got proper HTML with multiple news entries
-        soup = BeautifulSoup(cleaned_summary, 'html.parser')
-        story_count = len(soup.find_all('h2'))
-        
-        if story_count >= 3:  # We at least got a few stories
-            logger.info(f"API successfully returned {story_count} translated news stories")
-            return {
-                "html_content": cleaned_summary,
-                "article_count": story_count,
-                "sources": list(set(article.get('source', '') for article in selected_articles)),
-                "translated": True
-            }
+
+        api_url = "https://api.mistral.ai/v1/chat/completions"
+        response = requests.post(api_url, headers=headers, json=payload, timeout=120)  # Add timeout
+
+        # --- Response Handling ---
+        if response.status_code == 200:
+            logger.info(f"Mistral API request successful (Status Code: {response.status_code})")
+            response_data = response.json()
+
+            if not response_data.get("choices") or not response_data["choices"][0].get("message"):
+                logger.error("API response seems malformed: 'choices' or 'message' missing.")
+                logger.debug(f"Malformed response data: {response_data}")
+                return create_direct_output(news_data, "API response structure was invalid.")
+
+            summary_content = response_data["choices"][0]["message"]["content"]
+            finish_reason = response_data["choices"][0].get("finish_reason", "unknown")
+            logger.info(f"API call finished. Reason: {finish_reason}")
+            if finish_reason == "length":
+                logger.warning("API response may be truncated because finish reason was 'length'.")
+
+            # Log the raw response *before* cleaning
+            logger.debug(f"Raw API Response Content:\n----\n{summary_content[:500]}...\n----")
+
+            cleaned_summary_html = clean_html_content(summary_content)
+
+            # Verify cleaned HTML structure (simple check)
+            soup_check = BeautifulSoup(cleaned_summary_html, 'html.parser')
+            story_count = len(soup_check.find_all('h2'))
+
+            # Require a reasonable number of stories to consider it successful
+            min_expected_stories = 5  # Be flexible, model might not hit exactly 12
+            if story_count >= min_expected_stories:
+                logger.info(f"Successfully processed API response. Found {story_count} stories in cleaned HTML.")
+                return {
+                    "html_content": cleaned_summary_html,
+                    "article_count": story_count,  # Report actual stories returned
+                    "sources": list(set(article.get('source', '') for article in selected_articles if article.get('source'))),
+                    "translated": True,
+                    "error": None  # Indicate success
+                }
+            else:
+                logger.warning(f"API response parsing yielded only {story_count} stories (less than minimum {min_expected_stories}). Falling back to direct output.")
+                return create_direct_output(news_data, f"API response format issue (found {story_count} stories)")
+
         else:
-            # If fewer than 3 stories, something likely went wrong with the response
-            logger.warning(f"API returned only {story_count} stories, using fallback")
-            return create_direct_output(news_data, "API returned insufficient stories")
-            
+            # Handle API errors (non-200 status code)
+            error_details = f"Status Code: {response.status_code}"
+            try:
+                # Try to get more details from the JSON response body
+                error_body = response.json()
+                error_details += f" - Body: {json.dumps(error_body)}"
+            except json.JSONDecodeError:
+                # If body is not JSON, log the raw text
+                error_details += f" - Body: {response.text[:500]}"  # Limit text length
+
+            logger.error(f"Mistral API error: {error_details}")
+            # Create specific error message for fallback
+            fallback_msg = f"API Error {response.status_code}"
+            if response.status_code == 401: fallback_msg += " (Check API Key)"
+            if response.status_code == 429: fallback_msg += " (Rate Limit Reached)"
+            if response.status_code >= 500: fallback_msg += " (Server Issue)"
+
+            return create_direct_output(news_data, fallback_msg)
+
+    # --- Exception Handling ---
+    except requests.exceptions.Timeout:
+        logger.error("Network error: Request to Mistral API timed out.")
+        return create_direct_output(news_data, "Network Timeout connecting to AI service")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error connecting to Mistral API: {str(e)}")
+        return create_direct_output(news_data, f"Network Error: {str(e)}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding JSON response from API: {str(e)}")
+        logger.error("Could not parse JSON response from Mistral API")
+        return create_direct_output(news_data, "Invalid JSON response from AI service")
     except Exception as e:
-        logger.error(f"Error with Mistral AI: {str(e)}")
-        return create_direct_output(news_data, f"Translation Error: {str(e)}")
+        # Catch any other unexpected errors during the process
+        logger.error(f"Unexpected error during Mistral AI processing ({type(e).__name__}): {str(e)}")
+        logger.error(traceback.format_exc())  # Log the full traceback for debugging
+        return create_direct_output(news_data, f"Unexpected Error: {str(e)}")
 
 
 def create_direct_output(news_data: List[Dict[str, Any]], error_message: Optional[str] = None) -> Dict[str, Any]:
     """
-    Create a direct HTML output from the raw news data without using the API.
-    This function simply organizes the scraped articles with minimal processing.
-    
+    Creates HTML output directly from raw news data when API/translation fails.
+
     Args:
-        news_data: List of dictionaries containing news articles
-        error_message: Optional error message to display
-        
+        news_data: List of dictionaries containing news articles.
+        error_message: Optional error message to display.
+
     Returns:
-        Dictionary with HTML content for displaying the articles directly
+        Dictionary with HTML content, article count, sources, and direct mode flag.
     """
-    # Create a simple HTML structure
+    logger.info(f"Creating direct output. Reason: {error_message or 'N/A'}")
     soup = BeautifulSoup("<h1>Greek Domestic News Summary</h1>", 'html.parser')
-    
-    # Add a simple explanation
+
     note_p = soup.new_tag("p")
-    note_p["style"] = "font-style: italic; margin-bottom: 20px;"
-    note_p.string = "Here are the most recent news articles from Greek sources:"
+    note_p["style"] = "font-style: italic; margin-bottom: 15px;"
+    note_p.string = "Displaying the latest raw news articles from Greek sources:"
     soup.append(note_p)
-    
-    # If there's an error message, display it
+
     if error_message:
         error_p = soup.new_tag("p")
-        error_p["style"] = "color: #e74c3c; font-weight: bold; margin-bottom: 20px;"
+        error_p["style"] = "color: #e74c3c; font-weight: bold; margin-bottom: 20px; border: 1px solid #e74c3c; padding: 10px; background-color: #fadedb;"
         error_p.string = f"Note: Translation unavailable. ({error_message})"
         soup.append(error_p)
-    
-    # Select up to 12 articles
-    limit = min(12, len(news_data))
+
+    # Handle case with no articles
+    if not news_data:
+        no_data_p = soup.new_tag("p")
+        no_data_p.string = "No news articles were found to display."
+        soup.append(no_data_p)
+        return {
+            "html_content": str(soup),
+            "article_count": 0,
+            "sources": [],
+            "direct_mode": True,
+            "error": error_message
+        }
+
+    limit = min(12, len(news_data)) # Show up to 12 articles directly
+    logger.info(f"Displaying {limit} out of {len(news_data)} available articles directly.")
+
     for i, article in enumerate(news_data[:limit], 1):
-        # Extract title and try to translate using a simple rule-based approach
         title = article.get('title', 'Untitled Article')
-        
-        # Add the heading with number
         h2 = soup.new_tag("h2")
-        h2.string = f"{i}. {title}"
+        h2.string = f"{i}. {title}" # Original title
         soup.append(h2)
-        
-        # Add a short excerpt from the content if available
+
         content = article.get('content', '')
         if content:
-            # Get first 2-3 sentences or a small excerpt
-            sentences = re.split(r'[.!?]+', content)
-            excerpt = '. '.join(sentences[:min(3, len(sentences))]).strip()
-            
-            if not excerpt:  # Fallback if split didn't work
-                excerpt = content[:300] + "..." if len(content) > 300 else content
-                
+            # Simple excerpt logic
+            sentences = re.split(r'(?<=[.!?])\s+', content) # Split sentences
+            excerpt = '. '.join(sentences[:2]).strip() # Take first 2 sentences
+            if len(excerpt) < 50 and len(sentences) > 2: # If first 2 are very short, add 3rd
+                 excerpt = '. '.join(sentences[:3]).strip()
+            if not excerpt: # Fallback if sentence split failed
+                 excerpt = content[:250].strip() + ("..." if len(content) > 250 else "")
+
             p = soup.new_tag("p")
-            p.string = excerpt
+            p.string = excerpt # Original content excerpt
             soup.append(p)
-        
-        # Add source
+
+        source = article.get('source', 'Unknown Source')
         source_p = soup.new_tag("p")
         source_p["class"] = "news-source"
-        source_p.string = f"Source: {article.get('source', 'Unknown Source')}"
+        source_p.string = f"Source: {source}"
         soup.append(source_p)
-        
-        # Add link to original article
+
         url = article.get('url', '')
         if url:
-            a = soup.new_tag("a")
-            a["href"] = url
-            a["target"] = "_blank"
-            a["class"] = "read-more"
-            a.string = "Read Full Article"
+            a = soup.new_tag("a", href=url, target="_blank", attrs={"class": "read-more"})
+            a.string = "Read Full Article (Original Source)"
             soup.append(a)
-    
+
     return {
         "html_content": str(soup),
-        "article_count": len(news_data),
-        "sources": list(set(article.get('source', '') for article in news_data)),
-        "direct_mode": True
+        "article_count": len(news_data), # Total articles found
+        "sources": list(set(article.get('source', '') for article in news_data if article.get('source'))),
+        "direct_mode": True, # Flag indicating API was bypassed
+        "error": error_message # Pass along the error reason
     }
