@@ -3,7 +3,10 @@ import time
 import random
 import trafilatura
 import concurrent.futures
-from urllib.parse import urlparse
+import requests # Using requests+bs4 for link finding for more control
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin
+from typing import List, Dict, Optional, Set, Any
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -19,191 +22,229 @@ NEWS_SOURCES = [
     "https://www.news247.gr/",
     "https://www.naftemporiki.gr/",
     "https://www.tanea.gr/",
-    "https://www.gazzetta.gr/",
-    "https://www.policenet.gr/"
+    "https://www.gazzetta.gr/", # Sports news might be less relevant?
+    "https://www.policenet.gr/" # More specific audience
 ]
 
-def extract_domain(url):
-    """Extract the domain name from a URL."""
-    parsed_url = urlparse(url)
-    domain = parsed_url.netloc
-    if domain.startswith('www.'):
-        domain = domain[4:]
-    return domain
+# Patterns often indicating non-article pages to exclude
+EXCLUDE_URL_PATTERNS = [
+    "/tag/", "/category/", "/author/", "/user/", "/search/", "/videos/", "/photos/", "/gallery/",
+    "/contact", "/about", "/privacy", "/terms", "/faq/", "/archive/", "/syndication/", "/feed/",
+    "/live/", "/events/", "/shop/", "/classifieds/", "/jobs/", "/weather/", "/horoscope/",
+    "javascript:", "#", "mailto:", "tel:", ".pdf", ".jpg", ".png", ".gif", ".zip", ".rar",
+    "facebook.com", "twitter.com", "linkedin.com", "instagram.com", "youtube.com",
+    "login", "register", "subscribe", "syndromites" # Greek for subscribers
+]
 
-def get_news_links(url, limit=5):
-    """Extract news article links from a homepage."""
+# Optional: Patterns that might *boost* likelihood (use sparingly)
+# ARTICLE_URL_HINTS = ["/article/", "/post/", "/eidiseis/", "/nea/", "/reportaz/"] # Greek news/article
+
+def extract_domain(url: str) -> str:
+    """Extract the domain name (e.g., 'protothema.gr') from a URL."""
     try:
-        logger.debug(f"Fetching links from: {url}")
-        downloaded = trafilatura.fetch_url(url)
-        if not downloaded:
-            logger.error(f"Failed to download content from {url}")
-            return []
-        
-        # Extract using BeautifulSoup since trafilatura.extract_links is not available
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(downloaded, 'html.parser')
-        
-        # Find all links
-        links = [a.get('href') for a in soup.find_all('a', href=True)]
-        
-        # Filter links to only include those from the same domain and normalize URLs
-        domain = extract_domain(url)
-        filtered_links = []
-        
-        # Keywords that suggest this is a news article in Greek websites
-        article_indicators = [
-            "/article/", "/news/", "/ellada/", "/politics/", "/greece/", 
-            "/politiki/", "/economy/", "/oikonomia/", "/kosmos/", "/world/", 
-            "/koinonia/", "/society/", "/ygeia/", "/health/"
-        ]
-        
-        # Keywords that suggest this is NOT a news article
-        exclude_indicators = [
-            "/tag/", "/author/", "/category/", "/contact/", "/about/", 
-            "/privacy/", "/terms/", "/video/", "/photos/", "/galleries/",
-            "javascript:", "#", "mailto:", "tel:", "/rss/"
-        ]
-        
-        for link in links:
-            skip = False
-            
-            # Skip empty or javascript links
-            if not link or link.startswith('#') or link.startswith('javascript'):
-                continue
-                
-            # Handle relative URLs
-            if link.startswith('/'):
-                link = url.rstrip('/') + link
-            elif not (link.startswith('http://') or link.startswith('https://')):
-                continue
-                
-            # Check for exclusion indicators
-            for indicator in exclude_indicators:
-                if indicator in link:
-                    skip = True
-                    break
-                    
-            if skip:
-                continue
-                
-            link_domain = extract_domain(link)
-            
-            # Check if it's from the same domain and likely an article
-            if link_domain == domain:
-                is_article = False
-                # Check for article indicators
-                for indicator in article_indicators:
-                    if indicator in link:
-                        is_article = True
-                        break
-                        
-                # Additional heuristics: typical URL patterns for Greek news sites
-                # Check for date-like patterns in URL which often indicate news articles
-                if not is_article and any(pattern in link for pattern in ["/2024/", "/2023/", "/2022/"]):
-                    is_article = True
-                    
-                # Check for numeric IDs which often indicate article pages
-                if not is_article:
-                    parts = link.split('/')
-                    for part in parts:
-                        if part.isdigit() and len(part) > 4:  # Longer numbers are likely article IDs
-                            is_article = True
-                            break
-                
-                if is_article:
-                    filtered_links.append(link)
-        
-        # Deduplicate 
-        unique_links = list(set(filtered_links))
-        
-        # Sort by length of URL in ascending order (shorter URLs tend to be more canonical)
-        unique_links.sort(key=len)
-        
-        logger.debug(f"Found {len(unique_links)} unique article links from {url}")
-        return unique_links[:limit]
-        
-    except Exception as e:
-        logger.error(f"Error getting links from {url}: {str(e)}")
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc.lower()
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        return domain
+    except Exception:
+        return ""
+
+def get_news_links(homepage_url: str, limit: int = 5) -> List[str]:
+    """
+    Extract potential news article links from a homepage using requests and BeautifulSoup.
+    Focuses on excluding known non-article patterns.
+    """
+    links: Set[str] = set()
+    domain = extract_domain(homepage_url)
+    if not domain:
+        logger.error(f"Could not extract domain from homepage URL: {homepage_url}")
         return []
 
-def scrape_article(url):
-    """Scrape content from a single article URL."""
     try:
-        logger.debug(f"Scraping article: {url}")
-        
-        # Add a small delay to avoid overwhelming the server
-        time.sleep(random.uniform(0.5, 2.0))
-        
-        downloaded = trafilatura.fetch_url(url)
+        logger.debug(f"Fetching links from: {homepage_url}")
+        # Use requests for more control over headers and timeout
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(homepage_url, headers=headers, timeout=15)
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag['href'].strip()
+            if not href:
+                continue
+
+            # Create absolute URL
+            absolute_url = urljoin(homepage_url, href)
+            link_domain = extract_domain(absolute_url)
+
+            # Basic Filtering:
+            # 1. Must be HTTP/HTTPS
+            if not absolute_url.startswith(('http://', 'https://')):
+                continue
+            # 2. Must be from the same primary domain
+            if link_domain != domain:
+                continue
+            # 3. Exclude URLs matching common non-article patterns
+            if any(pattern in absolute_url.lower() for pattern in EXCLUDE_URL_PATTERNS):
+                continue
+            # 4. Basic length check (very short URLs are often not articles)
+            if len(absolute_url) < len(homepage_url) + 10: # Heuristic
+                 continue
+
+            # If it passes filters, add it
+            links.add(absolute_url)
+
+        # Sort by apparent freshness (often longer URLs are newer, but this is weak)
+        # Or simply take a random sample after filtering
+        link_list = sorted(list(links), key=len, reverse=True) # Longer URLs sometimes are more specific/newer
+
+        logger.info(f"Found {len(link_list)} potential article links from {homepage_url}")
+        return link_list[:limit]
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"HTTP Error getting links from {homepage_url}: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Error parsing links from {homepage_url}: {e}")
+        return []
+
+
+def scrape_article(url: str) -> Optional[Dict[str, Any]]:
+    """Scrape content and metadata from a single article URL using Trafilatura."""
+    try:
+        logger.debug(f"Attempting to scrape article: {url}")
+
+        # Add a small random delay
+        time.sleep(random.uniform(0.3, 1.0))
+
+        # Fetch and extract using Trafilatura
+        # Setting decode_errors='ignore' might help with some encoding issues
+        downloaded = trafilatura.fetch_url(url, decode_errors='ignore')
         if not downloaded:
-            logger.error(f"Failed to download article: {url}")
+            logger.warning(f"Failed to download article content (fetch_url returned None): {url}")
             return None
-        
+
         # Extract main content
-        content = trafilatura.extract(downloaded, include_comments=False, include_tables=False)
-        
-        # Get metadata like title
-        metadata = trafilatura.extract_metadata(downloaded)
-        title = metadata.title if metadata and metadata.title else "Unknown Title"
-        
-        # Get source domain
-        source = extract_domain(url)
-        
+        content = trafilatura.extract(downloaded,
+                                      include_comments=False,
+                                      include_tables=False,
+                                      output_format='text', # Get plain text
+                                      include_formatting=False) # No markdown
+
+        if not content or len(content.split()) < 50: # Filter out pages with very little extracted text
+            logger.warning(f"Extracted content too short or empty, likely not a main article: {url}")
+            return None
+
+        # Attempt to get metadata
+        title = "Untitled Article"
+        try:
+            metadata = trafilatura.extract_metadata(downloaded)
+            if metadata and metadata.title:
+                title = metadata.title
+        except Exception as meta_err:
+             logger.warning(f"Could not extract metadata for {url}: {meta_err}")
+
+
+        source_domain = extract_domain(url)
+
+        logger.info(f"Successfully scraped: {title[:50]}... from {source_domain}")
         return {
             "title": title,
-            "content": content,
+            "content": content.strip(), # Clean whitespace
             "url": url,
-            "source": source
+            "source": source_domain
         }
-        
+
     except Exception as e:
-        logger.error(f"Error scraping article {url}: {str(e)}")
+        # Catch potential errors during fetch or extract
+        logger.error(f"Error during scraping/extraction for article {url}: {e}", exc_info=False) # Set exc_info=True for traceback
         return None
 
-def scrape_news():
-    """Scrape news from all sources and their articles."""
-    all_news_data = []
-    
-    # Limit the number of sources to prevent timeouts
-    limited_sources = NEWS_SOURCES[:6]  # Just use 6 sources to get better diversity
-    logger.info(f"Using limited sources: {limited_sources}")
-    
-    # Start with a list to hold all article URLs
-    all_article_urls = []
-    
-    # Get article URLs from each news source homepage
-    for source_url in limited_sources:
-        try:
-            article_urls = get_news_links(source_url, 4)  # Get 4 articles from each source
-            if article_urls:
-                all_article_urls.extend(article_urls)
-                logger.debug(f"Added {len(article_urls)} links from {source_url}")
-        except Exception as e:
-            logger.error(f"Error processing source {source_url}: {str(e)}")
-    
-    # Limit the total number of articles to scrape to prevent timeouts
-    # but ensure we have enough to get 12 good articles
-    if len(all_article_urls) > 20:
-        all_article_urls = all_article_urls[:20]
-    
-    logger.info(f"Limited to {len(all_article_urls)} article URLs to scrape")
-    
-    # Use ThreadPoolExecutor to scrape articles in parallel
+
+def scrape_news(max_articles_per_source: int = 4, total_articles_target: int = 20) -> List[Dict[str, Any]]:
+    """
+    Scrape news from sources, fetching links and then article content in parallel.
+
+    Args:
+        max_articles_per_source: Max links to fetch from each homepage.
+        total_articles_target: Aim for roughly this many articles to scrape.
+
+    Returns:
+        A list of dictionaries, each containing scraped article data.
+    """
+    all_news_data: List[Dict[str, Any]] = []
+    all_article_urls: Set[str] = set() # Use a set to avoid duplicate URLs early
+
+    # Use a subset of sources if desired, or the full list
+    # sources_to_use = NEWS_SOURCES[:7] # Example: Limit sources
+    sources_to_use = NEWS_SOURCES
+    logger.info(f"Starting scrape for {len(sources_to_use)} sources...")
+
+    # --- Phase 1: Get potential article URLs ---
+    # Can run this sequentially or in parallel (parallel might be faster but hit rate limits)
+    for source_url in sources_to_use:
+        article_urls = get_news_links(source_url, limit=max_articles_per_source + 2) # Get slightly more initially
+        if article_urls:
+            added_count = len(set(article_urls) - all_article_urls)
+            all_article_urls.update(article_urls)
+            logger.debug(f"Added {added_count} new unique links from {source_url}. Total unique URLs: {len(all_article_urls)}")
+        time.sleep(random.uniform(0.2, 0.5)) # Small delay between fetching homepages
+
+    # Limit the total number of URLs before scraping articles
+    limited_urls = list(all_article_urls)
+    random.shuffle(limited_urls) # Shuffle to get diversity if limiting severely
+    urls_to_scrape = limited_urls[:min(len(limited_urls), total_articles_target * 2)] # Aim high initially, as some will fail
+
+    logger.info(f"Collected {len(all_article_urls)} unique potential URLs. Will attempt to scrape {len(urls_to_scrape)} articles.")
+
+    # --- Phase 2: Scrape articles in parallel ---
+    if not urls_to_scrape:
+         logger.warning("No article URLs found to scrape.")
+         return []
+
+    successful_scrapes = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_url = {executor.submit(scrape_article, url): url for url in all_article_urls}
-        
+        # Submit scraping tasks
+        future_to_url = {executor.submit(scrape_article, url): url for url in urls_to_scrape}
+
         for future in concurrent.futures.as_completed(future_to_url):
             url = future_to_url[future]
             try:
                 article_data = future.result()
-                if article_data and article_data.get("content"):
+                # Check if data is valid and content exists
+                if article_data and isinstance(article_data, dict) and article_data.get("content"):
                     all_news_data.append(article_data)
-            except Exception as e:
-                logger.error(f"Error processing article {url}: {str(e)}")
-    
-    # Sort by length of content as a rough heuristic for article completeness
-    all_news_data.sort(key=lambda x: len(x.get("content", "")), reverse=True)
-    
-    logger.info(f"Successfully scraped {len(all_news_data)} articles")
+                    successful_scrapes += 1
+                elif article_data is None:
+                    logger.debug(f"Scraping returned None (filtered or failed) for: {url}")
+                else:
+                     logger.warning(f"Scraping returned unexpected data type ({type(article_data)}) for: {url}")
+
+            except Exception as exc:
+                logger.error(f"Generating task for {url} resulted in an exception: {exc}", exc_info=False)
+
+    logger.info(f"Scraping complete. Successfully retrieved content for {successful_scrapes} out of {len(urls_to_scrape)} attempted articles.")
+
+    # Optional: Sort by content length or keep as is
+    # all_news_data.sort(key=lambda x: len(x.get("content", "")), reverse=True)
+
     return all_news_data
+
+# Example usage (if running this file directly)
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger.info("Starting direct scraper test...")
+    scraped_data = scrape_news()
+    print(f"\n--- Scraper Test Results ---")
+    print(f"Total articles scraped: {len(scraped_data)}")
+    if scraped_data:
+        print("Example article:")
+        print(f"  Title: {scraped_data[0].get('title')}")
+        print(f"  Source: {scraped_data[0].get('source')}")
+        print(f"  URL: {scraped_data[0].get('url')}")
+        print(f"  Content Snippet: {scraped_data[0].get('content', '')[:150]}...")
+    logger.info("Direct scraper test finished.")
