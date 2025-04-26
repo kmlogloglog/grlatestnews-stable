@@ -1,0 +1,43 @@
+Okay, that generic message "An unexpected error occurred. Please try again." usually means an exception was caught by the broadest except Exception as e: block in your summarize_news function, and the fallback (create_direct_output) was triggered, but the specific reason wasn't displayed to the end-user (which is often intentional for user experience).
+
+To fix this, we need to find out what specific error is happening. The logs are absolutely essential here.
+
+Please check the logs where your first app (the news summarizer) is running.
+
+Look for lines containing ERROR around the time you received the "unexpected error" message. Specifically, search for:
+
+Tracebacks: A multi-line output starting with Traceback (most recent call last):. This will point directly to the line of code causing the error and the type of exception.
+
+Mistral API error: followed by a status code (like 400, 401, 403, 429, 500, 503) and the response body. The body often contains the real error message from Mistral (e.g., "Invalid API key", "Rate limit exceeded", "Bad request - check parameters").
+
+Network error: (e.g., Timeout, ConnectionError, SSLError). This indicates a problem connecting to the Mistral servers.
+
+Error decoding JSON response: This would happen if the API returned something that wasn't valid JSON when the code expected it (less likely for the success path here, but possible for error responses).
+
+Error cleaning HTML content: If the API call succeeded but BeautifulSoup failed to parse the response.
+
+Unexpected error during Mistral AI processing ({TYPE}): {MESSAGE}: This is the message from the final catch-all block. The {TYPE} and {MESSAGE} parts, along with the traceback logged just before it, are key.
+
+Common Causes for This Generic Error in the News App:
+
+Invalid or Missing API Key: The MISTRAL_API_KEY environment variable isn't set correctly, is misspelled, or the key itself is wrong/expired. The logs should show a 401 Unauthorized error from the API.
+
+Network Connectivity Issues: Your server cannot reach https://api.mistral.ai. Firewalls, proxy issues, DNS problems, or temporary outages can cause this. Logs would show ConnectionError, Timeout, or SSLError.
+
+API Rate Limits Exceeded: You're making too many requests too quickly. Logs should show a 429 Too Many Requests error from the API.
+
+Mistral Server Issues: The Mistral API itself might be having temporary problems. Logs would likely show 5xx errors (e.g., 500, 503).
+
+Insufficient Quota/Funds: Your Mistral account might be out of credits. Logs might show a 402 or 429 error with a specific message about quotas.
+
+Malformed Input Data: Although less likely with the current structure, if news_data was somehow corrupted before being passed to summarize_news.
+
+Unexpected Response Format: The API returned a status code 200, but the response body was not structured as expected (e.g., missing choices or message), causing a KeyError or IndexError when accessing response_data["choices"][0]["message"]["content"].
+
+What to do:
+
+CHECK THE LOGS. Find the specific error message and traceback.
+
+Report the error message and traceback back here.
+
+Once we know the specific error, we can pinpoint the fix.
