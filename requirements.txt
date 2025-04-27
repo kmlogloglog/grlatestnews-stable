@@ -7,3 +7,5 @@ mistralai
 chromadb
 langchain
 gunicorn
+flask
+flask-cors
