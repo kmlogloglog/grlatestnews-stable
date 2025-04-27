@@ -221,31 +221,30 @@ def scrape_news(max_articles_per_source: int = 4, total_articles_target: int = 2
 
     # Use config values if available
     try:
-        import config
-        max_articles_per_source = config.MAX_ARTICLES_PER_SOURCE
-        total_articles_target = config.MAX_TOTAL_ARTICLES
+        sources = config.NEWS_SOURCES
     except Exception:
-        pass
+        sources = NEWS_SOURCES
 
-    sources_to_use = NEWS_SOURCES
-    logger.info(f"Starting scrape for {len(sources_to_use)} sources...")
+    logger.info(f"Scraping news from {len(sources)} sources. Max articles per source: {max_articles_per_source}, Total target: {total_articles_target}")
 
-    # --- Phase 1: Get potential article URLs ---
-    # Can run this sequentially or in parallel (parallel might be faster but hit rate limits)
-    for source_url in sources_to_use:
-        article_urls = get_news_links(source_url, limit=max_articles_per_source + 2) # Get slightly more initially
-        if article_urls:
-            added_count = len(set(article_urls) - all_article_urls)
-            all_article_urls.update(article_urls)
-            logger.debug(f"Added {added_count} new unique links from {source_url}. Total unique URLs: {len(all_article_urls)}")
-        time.sleep(random.uniform(0.2, 0.5)) # Small delay between fetching homepages
+    # Fetch links from each source, but limit immediately after extraction
+    for source_url in sources:
+        try:
+            candidate_links = get_news_links(source_url, limit=max_articles_per_source)
+            if len(candidate_links) > max_articles_per_source:
+                logger.warning(f"Trimmed {len(candidate_links)} links to {max_articles_per_source} for {source_url}")
+                candidate_links = candidate_links[:max_articles_per_source]
+            logger.info(f"Using {len(candidate_links)} links from {source_url}")
+            for link in candidate_links:
+                if link not in all_article_urls:
+                    all_article_urls.add(link)
+        except Exception as exc:
+            logger.error(f"Error fetching links from {source_url}: {exc}")
 
-    # Limit the total number of URLs before scraping articles
-    limited_urls = list(all_article_urls)
-    random.shuffle(limited_urls) # Shuffle to get diversity if limiting severely
-    urls_to_scrape = limited_urls[:min(len(limited_urls), total_articles_target * 2)] # Aim high initially, as some will fail
+    logger.info(f"Collected {len(all_article_urls)} unique potential URLs. Will attempt to scrape up to {total_articles_target} articles.")
 
-    logger.info(f"Collected {len(all_article_urls)} unique potential URLs. Will attempt to scrape {len(urls_to_scrape)} articles.")
+    # Limit total articles scraped
+    urls_to_scrape = list(all_article_urls)[:total_articles_target]
 
     # --- Phase 2: Scrape articles in parallel ---
     if not urls_to_scrape:
