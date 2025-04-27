@@ -17,13 +17,14 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 
 # News sources
 NEWS_SOURCES = [
-    "https://www.protothema.gr/",
-    "https://www.newsit.gr/",
+    "https://www.protothema.gr/greece/",
+    "https://www.newsit.gr/category/ellada/",
     "https://www.newsbomb.gr/",
-    "https://www.in.gr/",
-    "https://www.iefimerida.gr/",
-    "https://www.kathimerini.gr/",
-    "https://www.news247.gr/",
+    "https://www.in.gr/greece/",
+    "https://www.iefimerida.gr/ellada",
+    "https://www.kathimerini.gr/society/",
+    "https://www.kathimerini.gr/politics/",
+    "https://www.news247.gr/ellada/",
     "https://www.naftemporiki.gr/",
     "https://www.tanea.gr/",
     "https://www.gazzetta.gr/",

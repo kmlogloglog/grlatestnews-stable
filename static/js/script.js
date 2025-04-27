@@ -12,14 +12,16 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Show loading state
         setLoading(true);
-        
         // Clear previous alerts and results
         alertContainer.innerHTML = '';
         alertContainer.classList.add('d-none');
         resultsContainer.classList.add('d-none');
         summaryContent.innerHTML = '';
-        
-        // Send request to process news
+
+        // Show loader sentences immediately after 1s, and keep rotating until result
+        showLoader();
+
+        // Send request to process news right away (no artificial delay)
         fetch('/process_news', {
             method: 'POST',
             headers: {
@@ -29,7 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             setLoading(false);
-            
+            hideLoader();
             if (data.status === 'success') {
                 // Show success message
                 showAlert('success', 'News summarized successfully!');
@@ -46,19 +48,22 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(error => {
             console.error('Error:', error);
             setLoading(false);
+            hideLoader();
             showAlert('danger', 'An unexpected error occurred. Please try again.');
         });
     });
     
     function setLoading(isLoading) {
         if (isLoading) {
-            btnText.textContent = 'Summarizing...';
+            btnText.textContent = '';
             btnSpinner.classList.remove('d-none');
             submitBtn.disabled = true;
+            submitBtn.style.display = 'none'; // Hide the button while loading
         } else {
             btnText.textContent = 'Get Greek News Summary';
             btnSpinner.classList.add('d-none');
             submitBtn.disabled = false;
+            submitBtn.style.display = 'block'; // Show the button again
         }
     }
     
@@ -70,6 +75,52 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         alertContainer.classList.remove('d-none');
+    }
+    
+    // Loader messages and animation (with emoji)
+    const loaderSentences = [
+        "🇬🇷 Gathering today's freshest Greek headlines...",
+        "📰 Translating news from Greek to English...",
+        "🔍 Fact-checking with a magnifying glass...",
+        "🦉 Consulting the wise owl of Athens...",
+        "🎡 Spinning the news wheel for you...",
+        "📻 Tuning into the latest scoops...",
+        "📦 Packing the news into a neat summary...",
+        "🍋 Squeezing lemons for zesty news...",
+        "🎭 Translating drama into plain English...",
+        "💡 Illuminating today's top stories...",
+        "🚀 Launching your news rocket..."
+    ];
+    let loaderInterval = null;
+    let loaderIndex = 0;
+    function showLoader() {
+        const loaderDiv = document.createElement('div');
+        loaderDiv.id = 'customNewsLoader';
+        loaderDiv.className = 'custom-loader-container';
+        loaderDiv.innerHTML = `
+            <div class="spinner-border text-primary" role="status"></div>
+            <div id="loaderSentence" class="mt-2 fw-bold"></div>
+        `;
+        summaryContent.innerHTML = '';
+        summaryContent.appendChild(loaderDiv);
+        resultsContainer.classList.remove('d-none');
+        // Animate sentences after 1 second
+        loaderIndex = 0;
+        setTimeout(() => {
+            document.getElementById('loaderSentence').textContent = loaderSentences[loaderIndex];
+            loaderInterval = setInterval(() => {
+                loaderIndex = (loaderIndex + 1) % loaderSentences.length;
+                const loaderSentenceElem = document.getElementById('loaderSentence');
+                if (loaderSentenceElem) {
+                    loaderSentenceElem.textContent = loaderSentences[loaderIndex];
+                }
+            }, 2000);
+        }, 1000);
+    }
+    function hideLoader() {
+        clearInterval(loaderInterval);
+        const loaderDiv = document.getElementById('customNewsLoader');
+        if (loaderDiv) loaderDiv.remove();
     }
     
     function showSummaryContent(html) {

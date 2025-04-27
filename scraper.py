@@ -7,24 +7,32 @@ import requests # Using requests+bs4 for link finding for more control
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 from typing import List, Dict, Optional, Set, Any
+import datetime
+import pytz
+import dateparser
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# List of Greek news websites to scrape
-NEWS_SOURCES = [
-    "https://www.protothema.gr/",
-    "https://www.newsit.gr/",
-    "https://www.newsbomb.gr/",
-    "https://www.in.gr/",
-    "https://www.iefimerida.gr/",
-    "https://www.kathimerini.gr/",
-    "https://www.news247.gr/",
-    "https://www.naftemporiki.gr/",
-    "https://www.tanea.gr/",
-    "https://www.gazzetta.gr/", # Sports news might be less relevant?
-    "https://www.policenet.gr/" # More specific audience
-]
+# List of Greek news websites to scrape (imported from config if available)
+try:
+    import config
+    NEWS_SOURCES = config.NEWS_SOURCES
+except Exception:
+    # fallback if config import fails
+    NEWS_SOURCES = [
+        "https://www.protothema.gr/",
+        "https://www.newsit.gr/",
+        "https://www.newsbomb.gr/",
+        "https://www.in.gr/",
+        "https://www.iefimerida.gr/",
+        "https://www.kathimerini.gr/",
+        "https://www.news247.gr/",
+        "https://www.naftemporiki.gr/",
+        "https://www.tanea.gr/",
+        "https://www.gazzetta.gr/",
+        "https://www.policenet.gr/"
+    ]
 
 # Patterns often indicating non-article pages to exclude
 EXCLUDE_URL_PATTERNS = [
@@ -63,12 +71,13 @@ def get_news_links(homepage_url: str, limit: int = 5) -> List[str]:
 
     try:
         logger.debug(f"Fetching links from: {homepage_url}")
-        # Use requests for more control over headers and timeout
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(homepage_url, headers=headers, timeout=15)
         response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        logger.info(f"Fetched homepage {homepage_url} successfully. Status code: {response.status_code}")
+        logger.info(f"Homepage content (first 500 chars): {response.text[:500]}")
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -98,6 +107,11 @@ def get_news_links(homepage_url: str, limit: int = 5) -> List[str]:
             # If it passes filters, add it
             links.add(absolute_url)
 
+        logger.info(f"Extracted {len(links)} candidate links from {homepage_url}")
+
+        if not links:
+            logger.warning(f"No links found on homepage: {homepage_url}")
+
         # Sort by apparent freshness (often longer URLs are newer, but this is weak)
         # Or simply take a random sample after filtering
         link_list = sorted(list(links), key=len, reverse=True) # Longer URLs sometimes are more specific/newer
@@ -114,55 +128,81 @@ def get_news_links(homepage_url: str, limit: int = 5) -> List[str]:
 
 
 def scrape_article(url: str) -> Optional[Dict[str, Any]]:
-    """Scrape content and metadata from a single article URL using Trafilatura."""
+    """Scrape content and metadata from a single article URL using Trafilatura and fallback meta tag extraction."""
     try:
         logger.debug(f"Attempting to scrape article: {url}")
-
-        # Add a small random delay
         time.sleep(random.uniform(0.3, 1.0))
-
-        # Fetch and extract using Trafilatura
-        # Setting decode_errors='ignore' might help with some encoding issues
-        downloaded = trafilatura.fetch_url(url, decode_errors='ignore')
+        downloaded = trafilatura.fetch_url(url)
         if not downloaded:
             logger.warning(f"Failed to download article content (fetch_url returned None): {url}")
             return None
-
-        # Extract main content
-        content = trafilatura.extract(downloaded,
-                                      include_comments=False,
-                                      include_tables=False,
-                                      output_format='text', # Get plain text
-                                      include_formatting=False) # No markdown
-
-        if not content or len(content.split()) < 50: # Filter out pages with very little extracted text
-            logger.warning(f"Extracted content too short or empty, likely not a main article: {url}")
-            return None
-
-        # Attempt to get metadata
-        title = "Untitled Article"
-        try:
-            metadata = trafilatura.extract_metadata(downloaded)
-            if metadata and metadata.title:
-                title = metadata.title
-        except Exception as meta_err:
-             logger.warning(f"Could not extract metadata for {url}: {meta_err}")
-
-
+        # Extract main content and metadata
+        content = trafilatura.extract(downloaded, output_format='txt')
+        metadata = trafilatura.metadata.extract_metadata(downloaded)
+        title = metadata.title if metadata and metadata.title else None
+        # Try to get date from trafilatura metadata
+        pub_date = None
+        date_source = None
+        if metadata and metadata.date:
+            pub_date = dateparser.parse(metadata.date)
+            date_source = 'trafilatura'
+        # If no date, try meta tags and <time> tags
+        if not pub_date:
+            soup = BeautifulSoup(downloaded, 'lxml')
+            # Common meta tags for published date
+            meta_date_selectors = [
+                {'name': 'meta', 'attrs': {'property': 'article:published_time'}},
+                {'name': 'meta', 'attrs': {'name': 'pubdate'}},
+                {'name': 'meta', 'attrs': {'name': 'date'}},
+                {'name': 'meta', 'attrs': {'itemprop': 'datePublished'}},
+                {'name': 'meta', 'attrs': {'property': 'og:published_time'}},
+                {'name': 'meta', 'attrs': {'property': 'og:updated_time'}},
+            ]
+            for selector in meta_date_selectors:
+                tag = soup.find(**selector)
+                if tag and tag.get('content'):
+                    pub_date = dateparser.parse(tag['content'])
+                    if pub_date:
+                        date_source = f"meta:{selector['attrs']}"
+                        break
+            # Try <time> tag
+            if not pub_date:
+                time_tag = soup.find('time')
+                if time_tag:
+                    # Try datetime attribute or text
+                    date_str = time_tag.get('datetime') or time_tag.text
+                    pub_date = dateparser.parse(date_str)
+                    if pub_date:
+                        date_source = 'time_tag'
+        # If still no date, log as not found
+        if not pub_date:
+            logger.warning(f"No publication date found for article: {url}")
+        else:
+            logger.info(f"Extracted publication date ({date_source}): {pub_date} for article: {url}")
         source_domain = extract_domain(url)
-
-        logger.info(f"Successfully scraped: {title[:50]}... from {source_domain}")
+        logger.info(f"Successfully scraped: {title[:50] if title else 'NO TITLE'}... from {source_domain}")
         return {
             "title": title,
-            "content": content.strip(), # Clean whitespace
+            "content": content.strip() if content else '',
             "url": url,
-            "source": source_domain
+            "source": source_domain,
+            "date": pub_date.date().isoformat() if pub_date else None
         }
-
     except Exception as e:
-        # Catch potential errors during fetch or extract
-        logger.error(f"Error during scraping/extraction for article {url}: {e}", exc_info=False) # Set exc_info=True for traceback
+        logger.error(f"Error during scraping/extraction for article {url}: {e}", exc_info=False)
         return None
+
+
+def is_greek_related(article):
+    """Return True if the article is about Greece based on title/content."""
+    if not article:
+        return False
+    text = (article.get('title', '') + ' ' + article.get('content', '')).lower()
+    greek_keywords = [
+        'greece', 'greek', 'athens', 'thessaloniki', 'crete', 'aegean', 'macedonia',
+        'ελλάδα', 'ελλην', 'αθήνα', 'θεσσαλονίκη', 'κρήτη', 'αιγαίο', 'μακεδονία', 'πάτρα', 'πειραιάς', 'κυκλάδες', 'ηράκλειο', 'σαλονίκη'
+    ]
+    return any(keyword in text for keyword in greek_keywords)
 
 
 def scrape_news(max_articles_per_source: int = 4, total_articles_target: int = 20) -> List[Dict[str, Any]]:
@@ -179,8 +219,14 @@ def scrape_news(max_articles_per_source: int = 4, total_articles_target: int = 2
     all_news_data: List[Dict[str, Any]] = []
     all_article_urls: Set[str] = set() # Use a set to avoid duplicate URLs early
 
-    # Use a subset of sources if desired, or the full list
-    # sources_to_use = NEWS_SOURCES[:7] # Example: Limit sources
+    # Use config values if available
+    try:
+        import config
+        max_articles_per_source = config.MAX_ARTICLES_PER_SOURCE
+        total_articles_target = config.MAX_TOTAL_ARTICLES
+    except Exception:
+        pass
+
     sources_to_use = NEWS_SOURCES
     logger.info(f"Starting scrape for {len(sources_to_use)} sources...")
 
@@ -229,10 +275,67 @@ def scrape_news(max_articles_per_source: int = 4, total_articles_target: int = 2
 
     logger.info(f"Scraping complete. Successfully retrieved content for {successful_scrapes} out of {len(urls_to_scrape)} attempted articles.")
 
-    # Optional: Sort by content length or keep as is
-    # all_news_data.sort(key=lambda x: len(x.get("content", "")), reverse=True)
+    # Get today's date in EET (Eastern European Time)
+    eet = pytz.timezone('Europe/Athens')
+    today_eet = datetime.datetime.now(eet).date()
 
-    return all_news_data
+    filtered_news = []
+    for article in all_news_data:
+        # DEBUG: Log the title and date for each article
+        logger.info(f"DEBUG: Article '{article.get('title','NO TITLE')}' date field: {repr(article.get('date'))}")
+        pub_date = None
+        # Try to extract date from article if present
+        if 'date' in article and article['date']:
+            try:
+                pub_date = article['date']
+                if isinstance(pub_date, str):
+                    pub_date = datetime.datetime.fromisoformat(pub_date).date()
+            except Exception:
+                pub_date = None
+        # STRICT: Only include if pub_date matches today_eet
+        if pub_date == today_eet:
+            filtered_news.append(article)
+    logger.info(f"STRICT FILTER: {len(filtered_news)} articles for today's date in EET ({today_eet}) out of {len(all_news_data)} scraped.")
+
+    # Relax filter: If no articles for today, include articles from today or yesterday
+    if len(filtered_news) == 0:
+        yesterday_eet = today_eet - datetime.timedelta(days=1)
+        for article in all_news_data:
+            pub_date = None
+            if 'date' in article and article['date']:
+                try:
+                    pub_date = article['date']
+                    if isinstance(pub_date, str):
+                        pub_date = datetime.datetime.fromisoformat(pub_date).date()
+                except Exception:
+                    pub_date = None
+            if pub_date in [today_eet, yesterday_eet]:
+                filtered_news.append(article)
+        logger.info(f"Relaxed filter: {len(filtered_news)} articles for today or yesterday (EET) out of {len(all_news_data)} scraped.")
+
+    # If still none, fallback to latest as before
+    if len(filtered_news) == 0:
+        dated_articles = []
+        for article in all_news_data:
+            pub_date = None
+            if 'date' in article and article['date']:
+                try:
+                    pub_date = article['date']
+                    if isinstance(pub_date, str):
+                        pub_date = datetime.datetime.fromisoformat(pub_date).date()
+                except Exception:
+                    pub_date = None
+            if pub_date:
+                dated_articles.append((pub_date, article))
+        dated_articles.sort(reverse=True, key=lambda x: x[0])
+        filtered_news = [a[1] for a in dated_articles[:10]]
+        logger.info(f"No articles for today or yesterday, returning {len(filtered_news)} latest articles instead.")
+
+    # After collecting articles, filter for Greek-related
+    filtered_news = [a for a in filtered_news if is_greek_related(a)]
+    logger.info(f"After Greece relevance filter: {len(filtered_news)} articles remain.")
+
+    return filtered_news
 
 # Example usage (if running this file directly)
 if __name__ == '__main__':

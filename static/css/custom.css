@@ -1,8 +1,9 @@
 /* Custom styling for Greek News Summarizer */
 body {
     min-height: 100vh;
-    background-color: var(--bs-dark);
-    color: var(--bs-light);
+    background: #fff;
+    color: #2166c7;
+    font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
 }
 
 .container {
@@ -11,91 +12,129 @@ body {
 }
 
 .card {
-    background-color: var(--bs-gray-800);
-    border-radius: 12px;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 8px 32px 0 rgba(33, 102, 199, 0.08);
+    border: 1px solid #e3e9f6;
     margin-bottom: 2rem;
 }
 
 .btn-primary {
+    background: #2176d2;
+    border: none;
+    color: #fff;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    border-radius: 8px;
     transition: all 0.3s ease;
 }
 
 .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    background: #2166c7;
+    box-shadow: 0 5px 15px rgba(33, 102, 199, 0.15);
+    color: #fff;
+    transform: translateY(-2px) scale(1.04);
 }
 
 /* Results styling */
 #resultsContainer {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 4px 16px 0 rgba(33, 102, 199, 0.07);
     padding: 1.5rem;
-    border-radius: 12px;
-    background-color: var(--bs-gray-800);
     margin-top: 2rem;
 }
 
 #summaryContent {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px 0 rgba(33, 102, 199, 0.05);
+    color: #2166c7;
     padding: 1.5rem;
-    border-radius: 8px;
-    background-color: var(--bs-gray-900);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-/* News summary styling */
 #summaryContent h1 {
-    font-size: 1.75rem;
-    font-weight: bold;
-    color: var(--bs-info);
+    font-size: 2rem;
+    font-family: 'Montserrat', sans-serif;
+    color: #2166c7;
     margin-bottom: 1.5rem;
     text-align: center;
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--bs-gray-700);
+    border-bottom: 1px solid #e3e9f6;
 }
 
 #summaryContent h2 {
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: var(--bs-light);
-    margin-top: 1.5rem;
+    font-size: 1.2rem;
+    color: #2176d2;
+    margin-top: 1.2rem;
     margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--bs-gray-700);
+    border-bottom: 1px solid #e3e9f6;
     padding-bottom: 0.5rem;
 }
 
 #summaryContent p {
-    color: var(--bs-light);
+    color: #2166c7;
     margin-bottom: 1rem;
 }
 
 #summaryContent a.read-more {
-    display: inline-block;
-    color: var(--bs-light);
-    background-color: var(--bs-primary);
-    padding: 0.4rem 1rem;
+    color: #2176d2;
+    background: #fff;
     border-radius: 4px;
-    text-decoration: none;
+    padding: 0.4rem 1rem;
     font-weight: 500;
     margin: 0.5rem 0 1.5rem 0;
-    transition: background-color 0.2s;
+    transition: background 0.2s;
+    text-decoration: none;
 }
 
 #summaryContent a.read-more:hover {
-    background-color: var(--bs-primary-dark, #0056b3);
+    background: #e3e9f6;
+    color: #2166c7;
     text-decoration: none;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 
 #summaryContent .news-source {
     font-style: italic;
-    color: var(--bs-gray-500);
+    color: #2166c7;
     font-size: 0.9rem;
     margin: 0.25rem 0;
+}
+
+/* Loader styling */
+.custom-loader-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    font-size: 1.15rem;
+    color: #2176d2;
+    background: #fff;
+    border-radius: 10px;
+    margin-top: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 12px rgba(33,102,199,0.07);
+}
+
+#customNewsLoader .spinner-border {
+    width: 2.5rem;
+    height: 2.5rem;
+    color: #2176d2;
+}
+
+#customNewsLoader #loaderSentence {
+    text-align: center;
+    margin-top: 12px;
+    font-weight: 600;
 }
 
 /* For mobile optimization */
 @media (max-width: 576px) {
     .container {
-        padding-left: 20px;
-        padding-right: 20px;
+        padding-left: 10px;
+        padding-right: 10px;
     }
     
     .card {
@@ -103,14 +142,14 @@ body {
     }
     
     .card-body {
-        padding: 1.5rem;
+        padding: 1.2rem;
     }
     
     #summaryContent h1 {
-        font-size: 1.5rem;
+        font-size: 1.3rem;
     }
     
     #summaryContent h2 {
-        font-size: 1.2rem;
+        font-size: 1rem;
     }
 }

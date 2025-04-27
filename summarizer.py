@@ -15,8 +15,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Mistral AI API configuration
-MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+# Mistral AI API configuration (import from config if available)
+try:
+    import config
+    MISTRAL_API_KEY = config.MISTRAL_API_KEY
+except Exception:
+    MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 
 # --- HTML Cleaning Function (Keep as is, it's good) ---
 def clean_html_content(html_content: str) -> str:
@@ -161,6 +165,14 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     Returns:
         Dictionary with summarized/translated HTML content or direct output on failure.
     """
+    # Use config MISTRAL_API_KEY if available
+    global MISTRAL_API_KEY
+    try:
+        import config
+        MISTRAL_API_KEY = config.MISTRAL_API_KEY
+    except Exception:
+        pass
+
     if not news_data:
         logger.warning("No news data provided to summarize.")
         return create_direct_output([], "No articles found to process.")
@@ -174,11 +186,18 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     response = None # Initialize response
     try:
-        # --- Prepare Prompt (Keep the detailed instructions) ---
-        system_prompt = """
-        You are an expert translator and news summarizer. Translate Greek news articles into English and format them as clean HTML.
-        Follow the user's instructions precisely. Output *only* the HTML structure requested, starting with <h1> and ending with the last </a> tag. No extra text.
-        """
+        # Prepare prompt for Mistral AI
+        prompt = (
+            "You are a news summarizer for a Greek news website. "
+            "You will be given a list of news articles scraped from Greek news sources. "
+            "Your job is to do two things: "
+            "1. Only include articles that are truly about Greece, Greek society, politics, economy, culture, or major events directly relevant to Greece. Ignore any articles about foreign celebrities, international gossip, or topics not directly related to Greece. "
+            "2. For each relevant article, write a detailed, high-quality summary in English as a single paragraph (5-7 sentences), capturing all the important details and context. "
+            "Return the output as HTML with each headline as a <h2> and each summary as a <p>. "
+            "Do NOT include any articles that are not about Greece."
+        )
+
+        # Prepare user prompt with news articles
         user_prompt = "Translate the following Greek news articles into English and create a summary HTML page.\n\n"
         max_articles_to_send = 20
         selected_articles = news_data[:min(max_articles_to_send, len(news_data))]
@@ -212,8 +231,8 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         logger.info("Sending request to Mistral API...")
         headers = {"Content-Type": "application/json", "Accept": "application/json", "Authorization": f"Bearer {MISTRAL_API_KEY}"}
         payload = {
-            "model": "mistral-large-latest",
-            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            "model": "mistral-saba-latest",
+            "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": user_prompt}],
             "temperature": 0.3,
             "max_tokens": 4096,
             "response_format": {"type": "text"}
@@ -229,11 +248,19 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         response.raise_for_status()
 
         # Status is 200 if we reach here
-        response_data = response.json() # Parse JSON
+        try:
+            response_data = response.json()
+        except Exception as e:
+            logger.error('Failed to parse Mistral API response as JSON:', exc_info=True)
+            logger.error(f'Raw response text: {response.text}')
+            return create_direct_output(news_data, error_message='Mistral API response not valid JSON')
 
-        if not response_data.get("choices") or not response_data["choices"][0].get("message"):
-            logger.error(f"API response missing expected fields. Data: {response_data}")
-            return create_direct_output(news_data, "API response structure was invalid.")
+        # DEBUG: Log the full response for troubleshooting
+        if not isinstance(response_data, dict) or 'choices' not in response_data:
+            logger.error('Unexpected Mistral API response format!')
+            logger.error('Full response (JSON):', json.dumps(response_data, ensure_ascii=False, indent=2))
+            logger.error('Full response (text):', response.text)
+            raise ValueError(f"Unexpected Mistral API response format: {response_data}")
 
         summary_content = response_data["choices"][0]["message"]["content"]
         finish_reason = response_data["choices"][0].get("finish_reason", "unknown")
@@ -248,18 +275,26 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         story_count = len(soup_check.find_all('h2'))
         min_expected_stories = 5
 
-        if story_count >= min_expected_stories:
-            logger.info(f"Successfully processed API response. Found {story_count} stories.")
+        if story_count < min_expected_stories:
+            logger.warning(f"API response parsing yielded only {story_count} stories (< {min_expected_stories}). Displaying available stories.")
+            # Proceed with available stories instead of fallback
             return {
                 "html_content": cleaned_summary_html,
                 "article_count": story_count,
                 "sources": list(set(a.get('source', '') for a in selected_articles if a.get('source'))),
                 "translated": True,
+                "warning": f"Only {story_count} stories returned by AI (less than expected)",
                 "error": None
             }
-        else:
-            logger.warning(f"API response parsing yielded only {story_count} stories (< {min_expected_stories}). Falling back.")
-            return create_direct_output(news_data, f"API response format issue (found {story_count} stories)")
+
+        logger.info(f"Successfully processed API response. Found {story_count} stories.")
+        return {
+            "html_content": cleaned_summary_html,
+            "article_count": story_count,
+            "sources": list(set(a.get('source', '') for a in selected_articles if a.get('source'))),
+            "translated": True,
+            "error": None
+        }
 
     # --- Exception Handling (Catches network errors, status errors, JSON errors) ---
     except requests.exceptions.Timeout:
@@ -279,12 +314,6 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Handle other network errors (connection, SSL, etc.)
         logger.error(f"Network error connecting to Mistral API: {e}")
         return create_direct_output(news_data, f"Network Error") # Simpler message
-    except json.JSONDecodeError as e:
-        # Handle errors parsing the successful (200) response body
-        logger.error(f"Error decoding JSON response from API (Status 200 likely): {e}")
-        raw_response = response.text[:500] if response else "Response object unavailable"
-        logger.error(f"Raw response snippet causing JSON error: {raw_response}")
-        return create_direct_output(news_data, "Invalid JSON response from AI service")
     except Exception as e:
         # Catch any other unexpected errors
         logger.exception(f"Unexpected error during Mistral AI processing: {e}") # Use logger.exception for traceback
@@ -294,7 +323,7 @@ def summarize_news(news_data: List[Dict[str, Any]]) -> Dict[str, Any]:
 # --- Example Usage ---
 if __name__ == '__main__':
     # Assume scrape_news is imported from news_scraper
-    from news_scraper import scrape_news
+    from scraper import scrape_news
 
     logger.info("Starting summarizer test...")
     # 1. Scrape news first
