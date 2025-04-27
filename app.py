@@ -24,8 +24,8 @@ def index():
 
 @app.route('/process_news', methods=['POST'])
 def process_news():
-    print("/process_news endpoint called")
     try:
+        print("/process_news endpoint called")
         response_headers = {"Content-Type": "application/json"}
         logger.info("Starting news processing with extended timeout...")
         # Step 1: Scrape news from Greek websites
@@ -50,6 +50,8 @@ def process_news():
                 "status": "error",
                 "message": f"Error retrieving news content: {str(e)}"
             }), 500, response_headers
+        # Limit the number of articles to process (for memory safety)
+        news_data = news_data[:3]
         # Step 2: Summarize news using Mistral AI
         logger.info("Starting summarization with Mistral AI...")
         try:
@@ -76,9 +78,13 @@ def process_news():
             "html_content": summarized_news["html_content"]
         }), 200, response_headers
     except Exception as e:
-        print(f"Unexpected error in process_news: {str(e)}")
+        import traceback
+        print('Exception in /process_news:', e)
+        traceback.print_exc()
         logger.error(f"Unexpected error in process_news: {str(e)}", exc_info=True)
         return jsonify({
             "status": "error",
-            "message": "An unexpected error occurred. Please try again later."
-        }), 500, response_headers
+            "message": "An unexpected error occurred. Please try again later.",
+            "error": str(e),
+            "trace": traceback.format_exc()
+        }), 500
