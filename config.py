@@ -1,9 +1,9 @@
 import os
 
 # Web scraping settings
-MAX_ARTICLES_PER_SOURCE = 3
-MAX_TOTAL_ARTICLES = 50
-SCRAPING_TIMEOUT = 60  # seconds
+MAX_ARTICLES_PER_SOURCE = 6
+MAX_TOTAL_ARTICLES = 60
+SCRAPING_TIMEOUT = 120  # seconds (increased for more articles)
 
 # Mistral AI settings
 MISTRAL_MODEL = "mistral-small"

@@ -36,42 +36,25 @@ def process_news():
                 total_articles_target=config.MAX_TOTAL_ARTICLES
             )
             if not news_data or len(news_data) == 0:
-                print("No news articles were successfully scraped")
-                logger.warning("No news articles were successfully scraped")
                 return jsonify({
                     "status": "error",
-                    "message": "No news articles could be found for today or as latest. Please try again later, or relax the filter."
-                }), 200, response_headers
-            logger.info(f"Successfully scraped {len(news_data)} articles")
+                    "message": "No news articles could be scraped."
+                }), 500, response_headers
         except Exception as e:
-            print(f"Error during web scraping: {str(e)}")
-            logger.error(f"Error during web scraping: {str(e)}", exc_info=True)
+            logger.error(f"Error during scraping: {str(e)}", exc_info=True)
             return jsonify({
                 "status": "error",
                 "message": f"Error retrieving news content: {str(e)}"
             }), 500, response_headers
-        # Limit the number of articles to process (for memory safety)
-        news_data = news_data[:3]
-        # Step 2: Summarize news using Mistral AI
-        logger.info("Starting summarization with Mistral AI...")
+        logger.info(f"Passing {len(news_data)} articles to summarizer...")
         try:
             summarized_news = summarize_news(news_data)
-            if not summarized_news or "html_content" not in summarized_news:
-                print("News summarization failed or returned invalid data")
-                logger.warning("News summarization failed or returned invalid data")
-                return jsonify({
-                    "status": "error",
-                    "message": "Failed to summarize news content. Please try again later."
-                }), 500, response_headers
-            logger.info("News summarization completed successfully")
         except Exception as e:
-            print(f"Error during summarization: {str(e)}")
             logger.error(f"Error during summarization: {str(e)}", exc_info=True)
             return jsonify({
                 "status": "error",
-                "message": f"Error summarizing news: {str(e)}"
+                "message": f"Error during summarization: {str(e)}"
             }), 500, response_headers
-        print("News processed successfully!")
         return jsonify({
             "status": "success",
             "message": "News processed successfully!",
